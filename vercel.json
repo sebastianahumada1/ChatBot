@@ -4,10 +4,17 @@
     {
       "source": "/webhook",
       "destination": "/api/webhook"
+    },
+    {
+      "source": "/send-message",
+      "destination": "/api/send-message"
     }
   ],
   "functions": {
     "api/webhook.js": {
+      "maxDuration": 10
+    },
+    "api/send-message.js": {
       "maxDuration": 10
     }
   }

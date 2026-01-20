@@ -26,26 +26,56 @@
 4. **Configurar variables de entorno en Vercel:**
    - Ve a tu proyecto en Vercel Dashboard
    - Settings → Environment Variables
-   - Agrega: `VERIFY_TOKEN` = `tu_token_secreto_aqui`
+   - Agrega las siguientes variables:
+     - `VERIFY_TOKEN` = `1234` (token de verificación del webhook)
+     - `META_ACCESS_TOKEN` = `EAARRcq0pgjkBQgHCZCsTMXtEoxccqdTZBNnGDpmOf0so5o1l6YgaFNSZBZBAni1WC4pF6kiHlYOZBrUOUrkrsLlx61bO025Kx6OfZCuaVlY4XkXu7apw8nHh7oK4Dd1zKCZA2auXc3dS5yHKlUEpUnxZCbYDX7vhWPCnZCDaXUGRpB5tKXmZBhSBpFtvczdBpaVwZDZD` (token de acceso de Meta)
+     - `PHONE_NUMBER_ID` = (ID del número de teléfono de WhatsApp Business - se obtiene de Meta Developer Console)
    - Guarda y redepleya si es necesario
 
 5. **Obtener la URL del webhook:**
    Después del despliegue, Vercel te dará una URL como:
    ```
-   https://tu-proyecto.vercel.app/webhook
+   https://chat-bot-beta-ten.vercel.app/webhook
    ```
 
 6. **Configurar en Meta Developer Console:**
    - Ve a tu app en [Meta for Developers](https://developers.facebook.com/)
    - Ve a la sección de Webhooks
-   - Ingresa la URL: `https://tu-proyecto.vercel.app/webhook`
-   - Ingresa el `VERIFY_TOKEN` que configuraste en Vercel
+   - Ingresa la URL: `https://chat-bot-beta-ten.vercel.app/webhook`
+   - Ingresa el `VERIFY_TOKEN`: `1234`
    - Selecciona los eventos que quieres suscribir (messages, messaging_postbacks, etc.)
 
 ### URL del Webhook para Meta:
 
 ```
-https://tu-proyecto.vercel.app/webhook
+https://chat-bot-beta-ten.vercel.app/webhook
+```
+
+## 📤 Enviar Mensajes
+
+### Endpoint para enviar mensajes:
+
+```
+GET o POST https://chat-bot-beta-ten.vercel.app/send-message
+```
+
+**Parámetros:**
+- `to` (opcional): Número de teléfono (por defecto: `573502053858`)
+- `message` (opcional): Mensaje a enviar (por defecto: `hola`)
+
+**Ejemplos:**
+
+```bash
+# Enviar "hola" al número por defecto
+curl https://chat-bot-beta-ten.vercel.app/send-message
+
+# Enviar mensaje personalizado
+curl "https://chat-bot-beta-ten.vercel.app/send-message?to=573502053858&message=Hola desde el chatbot"
+
+# Usando POST
+curl -X POST https://chat-bot-beta-ten.vercel.app/send-message \
+  -H "Content-Type: application/json" \
+  -d '{"to": "573502053858", "message": "Hola desde el chatbot"}'
 ```
 
 ## 🛠️ Desarrollo Local
@@ -75,10 +105,12 @@ Si quieres probar localmente antes de desplegar:
    ```
    Esto te dará una URL pública como: `https://xxxx.ngrok.io/webhook`
 
-### Estructura del Webhook:
+### Estructura de Endpoints:
 
 - **GET /webhook**: Verificación del webhook por parte de Meta
 - **POST /webhook**: Recibe los mensajes y eventos de Meta
+- **GET /send-message**: Envía un mensaje de WhatsApp (parámetros: `to`, `message`)
+- **POST /send-message**: Envía un mensaje de WhatsApp (body: `{to, message}`)
 
 ### Notas:
 
