@@ -56,10 +56,19 @@ async function sendWhatsAppMessage(to, message) {
       return { success: true, data, phoneNumberId };
     } else {
       console.error(`[Chatbot] Error al enviar mensaje:`, JSON.stringify(data, null, 2));
+      
+      // Mensajes de error más claros
+      let errorMessage = `Error ${data.error?.code}: ${data.error?.message}`;
+      if (data.error?.code === 190) {
+        errorMessage += ' - El token de acceso expiró o es inválido. Actualiza META_ACCESS_TOKEN en Vercel.';
+      } else if (data.error?.code === 100) {
+        errorMessage += ' - Verifica que el PHONE_NUMBER_ID sea correcto y que el token tenga permisos.';
+      }
+      
       return { 
         success: false, 
         error: data,
-        details: `Error ${data.error?.code}: ${data.error?.message}`,
+        details: errorMessage,
         phoneNumberId
       };
     }
