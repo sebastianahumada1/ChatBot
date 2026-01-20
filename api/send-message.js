@@ -1,5 +1,5 @@
-// Token de acceso de Meta para enviar mensajes
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAARRcq0pgjkBQgHCZCsTMXtEoxccqdTZBNnGDpmOf0so5o1l6YgaFNSZBZBAni1WC4pF6kiHlYOZBrUOUrkrsLlx61bO025Kx6OfZCuaVlY4XkXu7apw8nHh7oK4Dd1zKCZA2auXc3dS5yHKlUEpUnxZCbYDX7vhWPCnZCDaXUGRpB5tKXmZBhSBpFtvczdBpaVwZDZD';
+// Token de acceso de Meta para enviar mensajes (token de 60 minutos)
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAARRcq0pgjkBQnRUjZBxM2vlMMlyhEGrTcDkjNUhd0ZBYYpjeby2nZALPZAOFCUTMwakRaCu6O2dJgR0NY0cpwsMld8Si7QaQK06muFPRa0bVVzJtcWqq2sR0RB82krmZBDU0NPiAKqnrvnth1vipnBnEfGA5la3fqCUX7DP2dxLrm41Af9iAFcZBS8H7aC8HlQssBExHBoe4GupgJXhDsduRldUW2GlvZCbMLZCD8W086KLGpJJwOPghZBZCaITl8qC2rjuMt7ZAx5lASZCZATZCkrlBbUV4nu5xePRCAZDZD';
 
 // ID del número de teléfono de WhatsApp Business
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '893259217214880';
@@ -73,25 +73,17 @@ async function sendWhatsAppMessage(to, message) {
       return { success: false, error: 'META_ACCESS_TOKEN no configurado.' };
     }
 
-    // Siempre intentar obtener el PHONE_NUMBER_ID automáticamente primero
-    console.log('[Chatbot] Obteniendo PHONE_NUMBER_ID automáticamente desde WABA...');
-    let phoneNumberId = await getPhoneNumberId(accessToken);
-    
-    // Si no se pudo obtener automáticamente, usar el configurado o el hardcodeado
-    if (!phoneNumberId) {
-      phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
-      console.log(`[Chatbot] Usando PHONE_NUMBER_ID configurado: ${phoneNumberId}`);
-    } else {
-      console.log(`[Chatbot] PHONE_NUMBER_ID obtenido automáticamente: ${phoneNumberId}`);
-    }
+    // Usar el PHONE_NUMBER_ID configurado directamente (893259217214880)
+    const phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
+    console.log(`[Chatbot] Usando PHONE_NUMBER_ID: ${phoneNumberId}`);
     
     if (!phoneNumberId) {
       console.error('[Chatbot] PHONE_NUMBER_ID no configurado');
       return { success: false, error: 'PHONE_NUMBER_ID no configurado y no se pudo obtener automáticamente.' };
     }
 
-    // Usar la versión más reciente de la API
-    const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+    // Usar la versión v22.0 de la API (la que funciona)
+    const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
     
     console.log(`[Chatbot] Enviando mensaje a ${to} usando PHONE_NUMBER_ID: ${phoneNumberId}...`);
     
