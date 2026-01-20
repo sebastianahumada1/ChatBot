@@ -42,16 +42,16 @@ async function sendWhatsAppMessage(to, message) {
       return { success: false, error: 'META_ACCESS_TOKEN no configurado.' };
     }
 
-    // Intentar obtener el PHONE_NUMBER_ID automáticamente si no está configurado
-    let phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
+    // Siempre intentar obtener el PHONE_NUMBER_ID automáticamente primero
+    console.log('[Chatbot] Obteniendo PHONE_NUMBER_ID automáticamente desde WABA...');
+    let phoneNumberId = await getPhoneNumberId(accessToken);
     
-    if (!phoneNumberId || phoneNumberId === '893259217214880') {
-      console.log('[Chatbot] Obteniendo PHONE_NUMBER_ID automáticamente...');
-      const autoPhoneNumberId = await getPhoneNumberId(accessToken);
-      if (autoPhoneNumberId) {
-        phoneNumberId = autoPhoneNumberId;
-        console.log(`[Chatbot] PHONE_NUMBER_ID obtenido: ${phoneNumberId}`);
-      }
+    // Si no se pudo obtener automáticamente, usar el configurado o el hardcodeado
+    if (!phoneNumberId) {
+      phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
+      console.log(`[Chatbot] Usando PHONE_NUMBER_ID configurado: ${phoneNumberId}`);
+    } else {
+      console.log(`[Chatbot] PHONE_NUMBER_ID obtenido automáticamente: ${phoneNumberId}`);
     }
     
     if (!phoneNumberId) {
