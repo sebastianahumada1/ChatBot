@@ -12,6 +12,10 @@
     {
       "source": "/verify-phone",
       "destination": "/api/verify-phone"
+    },
+    {
+      "source": "/check-permissions",
+      "destination": "/api/check-permissions"
     }
   ],
   "functions": {
