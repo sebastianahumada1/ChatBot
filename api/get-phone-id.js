@@ -68,23 +68,55 @@ async function getPhoneNumberId(accessToken) {
     // Si obtuvimos negocios, buscar WABA en ellos
     if (businessData.data?.length > 0) {
       for (const business of businessData.data) {
+        // Obtener cuentas de WhatsApp Business asociadas
         const wabaUrl = `https://graph.facebook.com/v21.0/${business.id}/owned_whatsapp_business_accounts?access_token=${accessToken}`;
         const wabaResponse = await fetch(wabaUrl);
         const wabaData = await wabaResponse.json();
         
         if (wabaData.data?.length > 0) {
-          const wabaId = wabaData.data[0].id;
-          const phoneUrl = `https://graph.facebook.com/v21.0/${wabaId}?fields=phone_numbers{id,display_phone_number,verified_name}&access_token=${accessToken}`;
-          const phoneResponse = await fetch(phoneUrl);
-          const phoneData = await phoneResponse.json();
-          
-          if (phoneData.phone_numbers?.data?.length > 0) {
-            return {
-              success: true,
-              phoneNumbers: phoneData.phone_numbers.data,
-              phoneNumberId: phoneData.phone_numbers.data[0].id,
-              method: 'business_accounts'
-            };
+          // Probar todas las cuentas de WhatsApp Business
+          for (const waba of wabaData.data) {
+            const wabaId = waba.id;
+            console.log(`[Chatbot] Probando WABA: ${wabaId}`);
+            
+            // Obtener los números de teléfono del WABA
+            const phoneUrl = `https://graph.facebook.com/v21.0/${wabaId}?fields=phone_numbers{id,display_phone_number,verified_name}&access_token=${accessToken}`;
+            const phoneResponse = await fetch(phoneUrl);
+            const phoneData = await phoneResponse.json();
+            
+            if (phoneData.phone_numbers?.data?.length > 0) {
+              return {
+                success: true,
+                wabaId: wabaId,
+                phoneNumbers: phoneData.phone_numbers.data,
+                phoneNumberId: phoneData.phone_numbers.data[0].id,
+                method: 'business_accounts'
+              };
+            }
+          }
+        }
+        
+        // También intentar obtener WABA directamente
+        const directWabaUrl = `https://graph.facebook.com/v21.0/${business.id}/whatsapp_business_accounts?access_token=${accessToken}`;
+        const directWabaResponse = await fetch(directWabaUrl);
+        const directWabaData = await directWabaResponse.json();
+        
+        if (directWabaData.data?.length > 0) {
+          for (const waba of directWabaData.data) {
+            const wabaId = waba.id;
+            const phoneUrl = `https://graph.facebook.com/v21.0/${wabaId}?fields=phone_numbers{id,display_phone_number,verified_name}&access_token=${accessToken}`;
+            const phoneResponse = await fetch(phoneUrl);
+            const phoneData = await phoneResponse.json();
+            
+            if (phoneData.phone_numbers?.data?.length > 0) {
+              return {
+                success: true,
+                wabaId: wabaId,
+                phoneNumbers: phoneData.phone_numbers.data,
+                phoneNumberId: phoneData.phone_numbers.data[0].id,
+                method: 'direct_waba'
+              };
+            }
           }
         }
       }
