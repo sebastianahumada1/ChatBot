@@ -16,6 +16,10 @@
     {
       "source": "/check-permissions",
       "destination": "/api/check-permissions"
+    },
+    {
+      "source": "/get-phone-id",
+      "destination": "/api/get-phone-id"
     }
   ],
   "functions": {
