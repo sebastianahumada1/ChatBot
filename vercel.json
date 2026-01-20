@@ -24,6 +24,10 @@
     {
       "source": "/test-waba",
       "destination": "/api/test-waba"
+    },
+    {
+      "source": "/check-status",
+      "destination": "/api/check-status"
     }
   ],
   "functions": {
