@@ -20,6 +20,10 @@
     {
       "source": "/get-phone-id",
       "destination": "/api/get-phone-id"
+    },
+    {
+      "source": "/test-waba",
+      "destination": "/api/test-waba"
     }
   ],
   "functions": {
