@@ -28,9 +28,47 @@
    - Settings → Environment Variables
    - Agrega las siguientes variables:
      - `VERIFY_TOKEN` = `1234` (token de verificación del webhook)
-     - `META_ACCESS_TOKEN` = `EAARRcq0pgjkBQgHCZCsTMXtEoxccqdTZBNnGDpmOf0so5o1l6YgaFNSZBZBAni1WC4pF6kiHlYOZBrUOUrkrsLlx61bO025Kx6OfZCuaVlY4XkXu7apw8nHh7oK4Dd1zKCZA2auXc3dS5yHKlUEpUnxZCbYDX7vhWPCnZCDaXUGRpB5tKXmZBhSBpFtvczdBpaVwZDZD` (token de acceso de Meta)
-     - `PHONE_NUMBER_ID` = (ID del número de teléfono de WhatsApp Business - se obtiene de Meta Developer Console)
+     - `META_ACCESS_TOKEN` = (token de acceso continuo de Meta - ver instrucciones abajo)
+     - `PHONE_NUMBER_ID` = `893259217214880` (ID del número de teléfono de WhatsApp Business)
    - Guarda y redepleya si es necesario
+
+### 🔑 Generar Token de Acceso Continuo (Larga Duración)
+
+Para usar un token que no expire, sigue estos pasos:
+
+1. **Ve a Meta Developer Console:**
+   - [https://developers.facebook.com/apps/](https://developers.facebook.com/apps/)
+   - Selecciona tu aplicación
+
+2. **Genera un System User Token:**
+   - Ve a **Tools** → **System Users**
+   - Si no tienes uno, crea un System User nuevo
+   - Click en **Generate New Token**
+   - Selecciona los permisos:
+     - `whatsapp_business_messaging`
+     - `whatsapp_business_management`
+   - Click en **Generate Token**
+   - **IMPORTANTE:** Copia el token inmediatamente (solo se muestra una vez)
+
+3. **O usa Graph API Explorer:**
+   - Ve a **Tools** → **Graph API Explorer**
+   - Selecciona tu aplicación
+   - En "Permissions", selecciona:
+     - `whatsapp_business_messaging`
+     - `whatsapp_business_management`
+   - Click en **Generate Access Token**
+   - Copia el token generado
+
+4. **Para tokens de larga duración:**
+   - El token de System User puede durar hasta 60 días sin expirar
+   - O puedes configurarlo para que no expire en **Settings** → **Advanced** → **Access Tokens**
+   - Los tokens de System User son ideales para producción
+
+5. **Actualiza el token en Vercel:**
+   - Copia el nuevo token
+   - Ve a Vercel → Settings → Environment Variables
+   - Actualiza `META_ACCESS_TOKEN` con el nuevo token
+   - Guarda y redeploya
 
 5. **Obtener la URL del webhook:**
    Después del despliegue, Vercel te dará una URL como:
