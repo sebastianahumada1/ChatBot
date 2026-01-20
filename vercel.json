@@ -8,6 +8,10 @@
     {
       "source": "/send-message",
       "destination": "/api/send-message"
+    },
+    {
+      "source": "/verify-phone",
+      "destination": "/api/verify-phone"
     }
   ],
   "functions": {

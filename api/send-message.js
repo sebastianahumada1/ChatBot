@@ -7,31 +7,42 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '893259217214880';
 // Función para enviar mensajes de WhatsApp usando la API de Meta
 async function sendWhatsAppMessage(to, message) {
   try {
-    const phoneNumberId = PHONE_NUMBER_ID || process.env.PHONE_NUMBER_ID;
+    const phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
+    const accessToken = process.env.META_ACCESS_TOKEN || META_ACCESS_TOKEN;
     
     if (!phoneNumberId) {
       console.error('[Chatbot] PHONE_NUMBER_ID no configurado');
       return { success: false, error: 'PHONE_NUMBER_ID no configurado. Necesitas configurarlo en las variables de entorno de Vercel.' };
     }
 
+    if (!accessToken) {
+      console.error('[Chatbot] META_ACCESS_TOKEN no configurado');
+      return { success: false, error: 'META_ACCESS_TOKEN no configurado.' };
+    }
+
+    // Usar la versión más reciente de la API
     const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
     
-    console.log(`[Chatbot] Enviando mensaje a ${to}...`);
+    console.log(`[Chatbot] Enviando mensaje a ${to} usando PHONE_NUMBER_ID: ${phoneNumberId}...`);
+    
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to,
+      type: 'text',
+      text: {
+        preview_url: false,
+        body: message
+      }
+    };
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: to,
-        type: 'text',
-        text: {
-          body: message
-        }
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json();
@@ -40,8 +51,12 @@ async function sendWhatsAppMessage(to, message) {
       console.log(`[Chatbot] Mensaje enviado exitosamente a ${to}:`, data);
       return { success: true, data };
     } else {
-      console.error(`[Chatbot] Error al enviar mensaje:`, data);
-      return { success: false, error: data };
+      console.error(`[Chatbot] Error al enviar mensaje:`, JSON.stringify(data, null, 2));
+      return { 
+        success: false, 
+        error: data,
+        details: `Error ${data.error?.code}: ${data.error?.message}` 
+      };
     }
   } catch (error) {
     console.error(`[Chatbot] Error al enviar mensaje:`, error);
