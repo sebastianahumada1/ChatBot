@@ -7,24 +7,38 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '893259217214880';
 // Función para obtener el PHONE_NUMBER_ID correcto desde el WABA
 async function getPhoneNumberId(accessToken) {
   try {
-    // Obtener el WhatsApp Business Account ID
-    const wabaUrl = `https://graph.facebook.com/v21.0/me?fields=whatsapp_business_accounts&access_token=${accessToken}`;
-    const wabaResponse = await fetch(wabaUrl);
-    const wabaData = await wabaResponse.json();
+    // Para System User tokens, obtener desde cuentas de negocio
+    const businessUrl = `https://graph.facebook.com/v21.0/me/businesses?access_token=${accessToken}`;
+    const businessResponse = await fetch(businessUrl);
+    const businessData = await businessResponse.json();
     
-    if (wabaData.whatsapp_business_accounts?.data?.length > 0) {
-      const wabaId = wabaData.whatsapp_business_accounts.data[0].id;
-      
-      // Obtener los números de teléfono del WABA
-      const phoneUrl = `https://graph.facebook.com/v21.0/${wabaId}?fields=phone_numbers&access_token=${accessToken}`;
-      const phoneResponse = await fetch(phoneUrl);
-      const phoneData = await phoneResponse.json();
-      
-      if (phoneData.phone_numbers?.data?.length > 0) {
-        // Retornar el primer número disponible
-        return phoneData.phone_numbers.data[0].id;
+    if (businessData.data?.length > 0) {
+      for (const business of businessData.data) {
+        const wabaUrl = `https://graph.facebook.com/v21.0/${business.id}/owned_whatsapp_business_accounts?access_token=${accessToken}`;
+        const wabaResponse = await fetch(wabaUrl);
+        const wabaData = await wabaResponse.json();
+        
+        if (wabaData.data?.length > 0) {
+          const wabaId = wabaData.data[0].id;
+          const phoneUrl = `https://graph.facebook.com/v21.0/${wabaId}?fields=phone_numbers&access_token=${accessToken}`;
+          const phoneResponse = await fetch(phoneUrl);
+          const phoneData = await phoneResponse.json();
+          
+          if (phoneData.phone_numbers?.data?.length > 0) {
+            return phoneData.phone_numbers.data[0].id;
+          }
+        }
       }
     }
+    
+    // Si no funciona, intentar directamente con el ID conocido
+    const testUrl = `https://graph.facebook.com/v21.0/893259217214880?fields=id&access_token=${accessToken}`;
+    const testResponse = await fetch(testUrl);
+    if (testResponse.ok) {
+      const testData = await testResponse.json();
+      return testData.id;
+    }
+    
     return null;
   } catch (error) {
     console.error('[Chatbot] Error al obtener PHONE_NUMBER_ID:', error);
