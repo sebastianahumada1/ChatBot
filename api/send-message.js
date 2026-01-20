@@ -4,20 +4,59 @@ const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAARRcq0pgjkBQgHCZCs
 // ID del número de teléfono de WhatsApp Business
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '893259217214880';
 
+// Función para obtener el PHONE_NUMBER_ID correcto desde el WABA
+async function getPhoneNumberId(accessToken) {
+  try {
+    // Obtener el WhatsApp Business Account ID
+    const wabaUrl = `https://graph.facebook.com/v21.0/me?fields=whatsapp_business_accounts&access_token=${accessToken}`;
+    const wabaResponse = await fetch(wabaUrl);
+    const wabaData = await wabaResponse.json();
+    
+    if (wabaData.whatsapp_business_accounts?.data?.length > 0) {
+      const wabaId = wabaData.whatsapp_business_accounts.data[0].id;
+      
+      // Obtener los números de teléfono del WABA
+      const phoneUrl = `https://graph.facebook.com/v21.0/${wabaId}?fields=phone_numbers&access_token=${accessToken}`;
+      const phoneResponse = await fetch(phoneUrl);
+      const phoneData = await phoneResponse.json();
+      
+      if (phoneData.phone_numbers?.data?.length > 0) {
+        // Retornar el primer número disponible
+        return phoneData.phone_numbers.data[0].id;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('[Chatbot] Error al obtener PHONE_NUMBER_ID:', error);
+    return null;
+  }
+}
+
 // Función para enviar mensajes de WhatsApp usando la API de Meta
 async function sendWhatsAppMessage(to, message) {
   try {
-    const phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
     const accessToken = process.env.META_ACCESS_TOKEN || META_ACCESS_TOKEN;
     
-    if (!phoneNumberId) {
-      console.error('[Chatbot] PHONE_NUMBER_ID no configurado');
-      return { success: false, error: 'PHONE_NUMBER_ID no configurado. Necesitas configurarlo en las variables de entorno de Vercel.' };
-    }
-
     if (!accessToken) {
       console.error('[Chatbot] META_ACCESS_TOKEN no configurado');
       return { success: false, error: 'META_ACCESS_TOKEN no configurado.' };
+    }
+
+    // Intentar obtener el PHONE_NUMBER_ID automáticamente si no está configurado
+    let phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
+    
+    if (!phoneNumberId || phoneNumberId === '893259217214880') {
+      console.log('[Chatbot] Obteniendo PHONE_NUMBER_ID automáticamente...');
+      const autoPhoneNumberId = await getPhoneNumberId(accessToken);
+      if (autoPhoneNumberId) {
+        phoneNumberId = autoPhoneNumberId;
+        console.log(`[Chatbot] PHONE_NUMBER_ID obtenido: ${phoneNumberId}`);
+      }
+    }
+    
+    if (!phoneNumberId) {
+      console.error('[Chatbot] PHONE_NUMBER_ID no configurado');
+      return { success: false, error: 'PHONE_NUMBER_ID no configurado y no se pudo obtener automáticamente.' };
     }
 
     // Usar la versión más reciente de la API
@@ -49,13 +88,14 @@ async function sendWhatsAppMessage(to, message) {
     
     if (response.ok) {
       console.log(`[Chatbot] Mensaje enviado exitosamente a ${to}:`, data);
-      return { success: true, data };
+      return { success: true, data, phoneNumberId };
     } else {
       console.error(`[Chatbot] Error al enviar mensaje:`, JSON.stringify(data, null, 2));
       return { 
         success: false, 
         error: data,
-        details: `Error ${data.error?.code}: ${data.error?.message}` 
+        details: `Error ${data.error?.code}: ${data.error?.message}`,
+        phoneNumberId
       };
     }
   } catch (error) {
