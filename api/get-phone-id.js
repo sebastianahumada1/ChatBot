@@ -1,5 +1,5 @@
-// Token de acceso de Meta
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAARRcq0pgjkBQgHCZCsTMXtEoxccqdTZBNnGDpmOf0so5o1l6YgaFNSZBZBAni1WC4pF6kiHlYOZBrUOUrkrsLlx61bO025Kx6OfZCuaVlY4XkXu7apw8nHh7oK4Dd1zKCZA2auXc3dS5yHKlUEpUnxZCbYDX7vhWPCnZCDaXUGRpB5tKXmZBhSBpFtvczdBpaVwZDZD';
+// Token de acceso de Meta (se toma de las variables de entorno)
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || '';
 
 // Función para obtener el PHONE_NUMBER_ID correcto desde el WABA
 async function getPhoneNumberId(accessToken) {
@@ -133,15 +133,40 @@ export default async function handler(req, res) {
     const accessToken = process.env.META_ACCESS_TOKEN || META_ACCESS_TOKEN;
     
     if (!accessToken) {
-      return res.status(500).json({ error: 'META_ACCESS_TOKEN no configurado' });
+      return res.status(500).json({ error: 'META_ACCESS_TOKEN no configurado en Vercel' });
     }
 
     const result = await getPhoneNumberId(accessToken);
     
+    // También intentar obtener directamente el número conocido
+    const knownPhoneId = '893259217214880';
+    let knownPhoneStatus = null;
+    
+    try {
+      const testUrl = `https://graph.facebook.com/v22.0/${knownPhoneId}?fields=id,display_phone_number&access_token=${accessToken}`;
+      const testResponse = await fetch(testUrl);
+      const testData = await testResponse.json();
+      
+      if (testResponse.ok) {
+        knownPhoneStatus = { success: true, data: testData };
+      } else {
+        knownPhoneStatus = { success: false, error: testData.error };
+      }
+    } catch (error) {
+      knownPhoneStatus = { success: false, error: error.message };
+    }
+    
     return res.status(200).json({
       success: result.success || false,
       ...result,
-      currentEnvPhoneNumberId: process.env.PHONE_NUMBER_ID || 'No configurado'
+      currentEnvPhoneNumberId: process.env.PHONE_NUMBER_ID || 'No configurado',
+      knownPhoneIdCheck: {
+        phoneId: knownPhoneId,
+        ...knownPhoneStatus
+      },
+      recommendation: knownPhoneStatus.success 
+        ? `El PHONE_NUMBER_ID ${knownPhoneId} es accesible con este token`
+        : `El PHONE_NUMBER_ID ${knownPhoneId} NO es accesible. Usa el phoneNumberId de arriba si está disponible.`
     });
   } catch (error) {
     return res.status(500).json({
