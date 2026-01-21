@@ -122,12 +122,21 @@ async function handleWhatsAppMessage(message, value) {
       console.log(`[Chatbot] Enviando respuesta a ${from}: ${response}`);
       // Usar el PHONE_NUMBER_ID del metadata si está disponible
       const phoneId = value.metadata?.phone_number_id || null;
-      const result = await sendWhatsAppMessage(from, response, phoneId);
+      console.log(`[Chatbot] Usando phoneId: ${phoneId || 'null (usará el configurado)'}`);
       
-      if (result.success) {
-        console.log(`[Chatbot] ✓ Respuesta enviada exitosamente a ${from}`);
-      } else {
-        console.error(`[Chatbot] ✗ Error al enviar respuesta:`, result.error);
+      try {
+        const result = await sendWhatsAppMessage(from, response, phoneId);
+        
+        if (result.success) {
+          console.log(`[Chatbot] ✓ Respuesta enviada exitosamente a ${from}`);
+          console.log(`[Chatbot] Datos de respuesta:`, JSON.stringify(result.data, null, 2));
+        } else {
+          console.error(`[Chatbot] ✗ Error al enviar respuesta a ${from}:`, JSON.stringify(result.error, null, 2));
+          console.error(`[Chatbot] Detalles del error:`, result.details || 'Sin detalles adicionales');
+        }
+      } catch (error) {
+        console.error(`[Chatbot] ✗ Excepción al enviar respuesta:`, error.message);
+        console.error(`[Chatbot] Stack trace:`, error.stack);
       }
     }
   } else if (messageType !== 'text') {
