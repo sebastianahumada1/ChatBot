@@ -176,96 +176,65 @@ export default async function handler(req, res) {
     console.log('[Chatbot] Method:', req.method);
     console.log('[Chatbot] Body existe:', !!body);
     console.log('[Chatbot] Body type:', typeof body);
-    
-    // Solo loggear el body completo si es pequeño, sino resumir
-    const bodyStr = JSON.stringify(body, null, 2);
-    if (bodyStr.length > 2000) {
-      console.log('[Chatbot] Body (resumido):', {
-        object: body?.object,
-        entryCount: body?.entry?.length || 0,
-        hasChanges: body?.entry?.[0]?.changes?.length > 0
-      });
-      console.log('[Chatbot] Body completo (truncado):', bodyStr.substring(0, 2000) + '...');
-    } else {
-      console.log('[Chatbot] Body completo:', bodyStr);
-    }
     console.log('[Chatbot] Object type:', body?.object);
 
     // Verifica que es un evento de webhook válido
     if (body.object === 'whatsapp_business_account' || body.object === 'page') {
       console.log('[Chatbot] Object válido detectado:', body.object);
-      console.log('[Chatbot] Número de entries:', body.entry?.length || 0);
+      console.log('[Chatbot] Número de entries:', body?.entry?.length || 0);
       
-      // Procesa cada entrada del webhook
-      body.entry?.forEach((entry, index) => {
-        console.log(`[Chatbot] --- Procesando entry ${index + 1} ---`);
-        console.log('[Chatbot] Entry ID:', entry.id);
-        console.log('[Chatbot] Entry keys:', Object.keys(entry));
-        
-        // Procesa cada mensaje (para Messenger)
-        if (entry.messaging) {
-          console.log('[Chatbot] Entry tiene messaging:', entry.messaging.length);
-          entry.messaging.forEach((event) => {
-            if (event.message) {
-              console.log('[Chatbot] Mensaje de Messenger detectado');
-              handleMessage(event);
-            }
-          });
-        } else {
-          console.log('[Chatbot] Entry NO tiene messaging');
-        }
-
-        // Para WhatsApp Business API
-        if (entry.changes && entry.changes.length > 0) {
-          console.log('[Chatbot] Entry tiene', entry.changes.length, 'change(s)');
-          entry.changes.forEach((change, changeIndex) => {
-            console.log(`[Chatbot] --- Change ${changeIndex + 1} ---`);
-            console.log('[Chatbot] Change field:', change.field);
-            console.log('[Chatbot] Change value keys:', Object.keys(change.value || {}));
-            console.log('[Chatbot] Change value completo:', JSON.stringify(change.value, null, 2));
+      // IMPORTANTE: Responder a Meta inmediatamente para evitar timeouts
+      // Procesar los mensajes en segundo plano después de responder
+      res.status(200).send('EVENT_RECEIVED');
+      
+      // Procesar mensajes de forma asíncrona (sin bloquear la respuesta)
+      setImmediate(async () => {
+        try {
+          // Procesa cada entrada del webhook
+          body.entry?.forEach((entry, index) => {
+            console.log(`[Chatbot] --- Procesando entry ${index + 1} ---`);
+            console.log('[Chatbot] Entry ID:', entry.id);
             
-            // Guardar el PHONE_NUMBER_ID si está disponible
-            if (change.value.metadata?.phone_number_id) {
-              const detectedPhoneId = change.value.metadata.phone_number_id;
-              console.log(`[Chatbot] PHONE_NUMBER_ID detectado: ${detectedPhoneId}`);
-            }
-            
-            // Procesar mensajes entrantes
-            if (change.value.messages && Array.isArray(change.value.messages)) {
-              console.log(`[Chatbot] ✓ ${change.value.messages.length} mensaje(s) detectado(s)`);
-              change.value.messages.forEach((message, msgIndex) => {
-                console.log(`[Chatbot] Procesando mensaje ${msgIndex + 1}`);
-                handleWhatsAppMessage(message, change.value);
+            // Procesa cada mensaje (para Messenger)
+            if (entry.messaging) {
+              entry.messaging.forEach((event) => {
+                if (event.message) {
+                  console.log('[Chatbot] Mensaje de Messenger detectado');
+                  handleMessage(event);
+                }
               });
-            } else {
-              console.log('[Chatbot] ✗ No se encontraron mensajes en change.value.messages');
-              console.log('[Chatbot] Change.value tiene:', Object.keys(change.value || {}));
-              
-              // Verificar si hay mensajes en otro lugar
-              if (change.value.messaging) {
-                console.log('[Chatbot] Se encontró change.value.messaging');
-                console.log('[Chatbot] Messaging:', JSON.stringify(change.value.messaging, null, 2));
-              }
             }
-            
-            // También verificar statuses si existe
-            if (change.value.statuses) {
-              console.log('[Chatbot] Statuses detectados:', JSON.stringify(change.value.statuses, null, 2));
-            }
-            
-            // Verificar contacts
-            if (change.value.contacts) {
-              console.log('[Chatbot] Contacts detectados:', JSON.stringify(change.value.contacts, null, 2));
+
+            // Para WhatsApp Business API
+            if (entry.changes && entry.changes.length > 0) {
+              entry.changes.forEach((change, changeIndex) => {
+                console.log(`[Chatbot] --- Change ${changeIndex + 1} ---`);
+                console.log('[Chatbot] Change field:', change.field);
+                
+                // Guardar el PHONE_NUMBER_ID si está disponible
+                if (change.value.metadata?.phone_number_id) {
+                  const detectedPhoneId = change.value.metadata.phone_number_id;
+                  console.log(`[Chatbot] PHONE_NUMBER_ID detectado: ${detectedPhoneId}`);
+                }
+                
+                // Procesar mensajes entrantes
+                if (change.value.messages && Array.isArray(change.value.messages)) {
+                  console.log(`[Chatbot] ✓ ${change.value.messages.length} mensaje(s) detectado(s)`);
+                  change.value.messages.forEach((message, msgIndex) => {
+                    console.log(`[Chatbot] Procesando mensaje ${msgIndex + 1}`);
+                    handleWhatsAppMessage(message, change.value);
+                  });
+                }
+              });
             }
           });
-        } else {
-          console.log('[Chatbot] ✗ Entry NO tiene changes');
-          console.log('[Chatbot] Entry completo:', JSON.stringify(entry, null, 2));
+          console.log('[Chatbot] ===== FIN PROCESAMIENTO WEBHOOK =====');
+        } catch (error) {
+          console.error('[Chatbot] Error procesando webhook:', error);
         }
       });
-
-      console.log('[Chatbot] ===== FIN WEBHOOK =====');
-      return res.status(200).send('EVENT_RECEIVED');
+      
+      return;
     } else {
       console.log('[Chatbot] Webhook no reconocido. Object:', body.object);
       return res.status(404).send('Not Found');
