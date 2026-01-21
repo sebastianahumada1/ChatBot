@@ -156,7 +156,7 @@ async function handleWhatsAppMessage(message, value) {
     let response = null;
     
     if (lowerMessage.includes('hola') || lowerMessage.includes('hi') || lowerMessage.includes('hello')) {
-      response = '¡Hola! ¿En qué puedo ayudarte?';
+      response = 'funcionó';
     } else if (lowerMessage.includes('adios') || lowerMessage.includes('bye') || lowerMessage.includes('chao')) {
       response = '¡Hasta luego! Que tengas un buen día.';
     } else if (lowerMessage.includes('gracias') || lowerMessage.includes('thank')) {
