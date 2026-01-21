@@ -158,8 +158,11 @@ export default async function handler(req, res) {
     const body = req.body;
 
     console.log('[Chatbot] ===== WEBHOOK RECIBIDO =====');
+    console.log('[Chatbot] Method:', req.method);
+    console.log('[Chatbot] Body existe:', !!body);
+    console.log('[Chatbot] Body type:', typeof body);
     console.log('[Chatbot] Body completo:', JSON.stringify(body, null, 2));
-    console.log('[Chatbot] Object type:', body.object);
+    console.log('[Chatbot] Object type:', body?.object);
 
     // Verifica que es un evento de webhook válido
     if (body.object === 'whatsapp_business_account' || body.object === 'page') {
