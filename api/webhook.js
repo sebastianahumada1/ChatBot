@@ -163,25 +163,36 @@ export default async function handler(req, res) {
 
     // Verifica que es un evento de webhook válido
     if (body.object === 'whatsapp_business_account' || body.object === 'page') {
+      console.log('[Chatbot] Object válido detectado:', body.object);
+      console.log('[Chatbot] Número de entries:', body.entry?.length || 0);
+      
       // Procesa cada entrada del webhook
-      body.entry?.forEach((entry) => {
-        console.log('[Chatbot] Procesando entry:', entry.id);
+      body.entry?.forEach((entry, index) => {
+        console.log(`[Chatbot] --- Procesando entry ${index + 1} ---`);
+        console.log('[Chatbot] Entry ID:', entry.id);
+        console.log('[Chatbot] Entry keys:', Object.keys(entry));
         
         // Procesa cada mensaje (para Messenger)
         if (entry.messaging) {
+          console.log('[Chatbot] Entry tiene messaging:', entry.messaging.length);
           entry.messaging.forEach((event) => {
             if (event.message) {
               console.log('[Chatbot] Mensaje de Messenger detectado');
               handleMessage(event);
             }
           });
+        } else {
+          console.log('[Chatbot] Entry NO tiene messaging');
         }
 
         // Para WhatsApp Business API
-        if (entry.changes) {
-          entry.changes.forEach((change) => {
-            console.log('[Chatbot] Change detectado:', change.field);
-            console.log('[Chatbot] Change value:', JSON.stringify(change.value, null, 2));
+        if (entry.changes && entry.changes.length > 0) {
+          console.log('[Chatbot] Entry tiene', entry.changes.length, 'change(s)');
+          entry.changes.forEach((change, changeIndex) => {
+            console.log(`[Chatbot] --- Change ${changeIndex + 1} ---`);
+            console.log('[Chatbot] Change field:', change.field);
+            console.log('[Chatbot] Change value keys:', Object.keys(change.value || {}));
+            console.log('[Chatbot] Change value completo:', JSON.stringify(change.value, null, 2));
             
             // Guardar el PHONE_NUMBER_ID si está disponible
             if (change.value.metadata?.phone_number_id) {
@@ -190,23 +201,36 @@ export default async function handler(req, res) {
             }
             
             // Procesar mensajes entrantes
-            if (change.value.messages) {
-              console.log(`[Chatbot] ${change.value.messages.length} mensaje(s) detectado(s)`);
-              change.value.messages.forEach((message) => {
+            if (change.value.messages && Array.isArray(change.value.messages)) {
+              console.log(`[Chatbot] ✓ ${change.value.messages.length} mensaje(s) detectado(s)`);
+              change.value.messages.forEach((message, msgIndex) => {
+                console.log(`[Chatbot] Procesando mensaje ${msgIndex + 1}`);
                 handleWhatsAppMessage(message, change.value);
               });
             } else {
-              console.log('[Chatbot] No se encontraron mensajes en change.value');
-              console.log('[Chatbot] Change.value keys:', Object.keys(change.value || {}));
+              console.log('[Chatbot] ✗ No se encontraron mensajes en change.value.messages');
+              console.log('[Chatbot] Change.value tiene:', Object.keys(change.value || {}));
+              
+              // Verificar si hay mensajes en otro lugar
+              if (change.value.messaging) {
+                console.log('[Chatbot] Se encontró change.value.messaging');
+                console.log('[Chatbot] Messaging:', JSON.stringify(change.value.messaging, null, 2));
+              }
             }
             
             // También verificar statuses si existe
             if (change.value.statuses) {
-              console.log('[Chatbot] Statuses detectados:', change.value.statuses);
+              console.log('[Chatbot] Statuses detectados:', JSON.stringify(change.value.statuses, null, 2));
+            }
+            
+            // Verificar contacts
+            if (change.value.contacts) {
+              console.log('[Chatbot] Contacts detectados:', JSON.stringify(change.value.contacts, null, 2));
             }
           });
         } else {
-          console.log('[Chatbot] No se encontraron changes en entry');
+          console.log('[Chatbot] ✗ Entry NO tiene changes');
+          console.log('[Chatbot] Entry completo:', JSON.stringify(entry, null, 2));
         }
       });
 
