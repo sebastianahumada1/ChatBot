@@ -28,6 +28,10 @@
     {
       "source": "/check-status",
       "destination": "/api/check-status"
+    },
+    {
+      "source": "/test-webhook",
+      "destination": "/api/test-webhook"
     }
   ],
   "functions": {
