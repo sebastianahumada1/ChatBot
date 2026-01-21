@@ -41,7 +41,23 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
     // Usar la versión v24.0 de la API (coincide con la configuración del webhook)
     const url = `https://graph.facebook.com/v24.0/${phoneNumberId}/messages`;
     
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to,
+      type: 'text',
+      text: {
+        preview_url: false,
+        body: message
+      }
+    };
+    
     console.log(`[Chatbot] Enviando mensaje a ${to}...`);
+    const startTime = Date.now();
+    
+    // Crear un AbortController para timeout (8 segundos)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -49,29 +65,43 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: to,
-        type: 'text',
-        text: {
-          preview_url: false,
-          body: message
-        }
-      })
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
-
-    const data = await response.json();
     
+    clearTimeout(timeoutId);
+    const elapsedTime = Date.now() - startTime;
+    console.log(`[Chatbot] Respuesta recibida en ${elapsedTime}ms`);
+    
+    const data = await response.json();
+  
     if (response.ok) {
-      console.log(`[Chatbot] Mensaje enviado exitosamente a ${to}:`, data);
+      console.log(`[Chatbot] ✓ Mensaje enviado exitosamente a ${to} en ${elapsedTime}ms`);
       return { success: true, data };
     } else {
-      console.error(`[Chatbot] Error al enviar mensaje:`, data);
+      console.error(`[Chatbot] ✗ Error al enviar mensaje (${elapsedTime}ms):`, JSON.stringify(data, null, 2));
+      
+      // Mensajes de error más específicos
+      if (data.error?.code === 190) {
+        console.error(`[Chatbot] Token expirado o inválido. Actualiza META_ACCESS_TOKEN en Vercel.`);
+      } else if (data.error?.code === 100) {
+        console.error(`[Chatbot] PHONE_NUMBER_ID incorrecto o sin permisos.`);
+      }
+      
       return { success: false, error: data };
     }
   } catch (error) {
-    console.error(`[Chatbot] Error al enviar mensaje:`, error);
+    const elapsedTime = Date.now() - startTime;
+    
+    if (error.name === 'AbortError') {
+      console.error(`[Chatbot] ⏱ Timeout: La petición tardó más de 8 segundos (${elapsedTime}ms)`);
+      return { success: false, error: 'Timeout: La petición tardó más de 8 segundos' };
+    }
+    
+    console.error(`[Chatbot] ✗ Error después de ${elapsedTime}ms:`, error.message);
+    if (error.stack) {
+      console.error(`[Chatbot] Stack:`, error.stack);
+    }
     return { success: false, error: error.message };
   }
 }
