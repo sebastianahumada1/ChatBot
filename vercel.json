@@ -36,6 +36,10 @@
     {
       "source": "/webhook-info",
       "destination": "/api/webhook-info"
+    },
+    {
+      "source": "/debug-webhook",
+      "destination": "/api/debug-webhook"
     }
   ],
   "functions": {
