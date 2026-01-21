@@ -15,7 +15,7 @@ async function sendWhatsAppMessage(to, message) {
       return { success: false, error: 'META_ACCESS_TOKEN no configurado.' };
     }
 
-    // Usar el PHONE_NUMBER_ID configurado directamente (893259217214880)
+    // Usar el PHONE_NUMBER_ID configurado
     const phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
     console.log(`[Chatbot] Usando PHONE_NUMBER_ID: ${phoneNumberId}`);
     
