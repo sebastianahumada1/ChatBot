@@ -21,6 +21,8 @@ function handleMessage(event) {
 
 // Función para enviar mensajes de WhatsApp usando la API de Meta
 async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
+  const startTime = Date.now();
+  
   try {
     const accessToken = process.env.META_ACCESS_TOKEN || META_ACCESS_TOKEN;
     // Usar el phoneNumberId del webhook si está disponible, sino el configurado
@@ -55,8 +57,6 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
     console.log(`[Chatbot] Enviando mensaje a ${to}...`);
     console.log(`[Chatbot] URL: ${url}`);
     console.log(`[Chatbot] Token presente: ${!!accessToken} (primeros 10 chars: ${accessToken?.substring(0, 10)}...)`);
-    
-    const startTime = Date.now();
     
     // Crear un AbortController para timeout (8 segundos)
     const controller = new AbortController();
