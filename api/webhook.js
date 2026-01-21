@@ -4,6 +4,9 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN || '1234';
 // Token de acceso de Meta para enviar mensajes (desde variables de entorno)
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || '';
 
+// Token de OpenAI para respuestas dinámicas
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+
 // ID del número de teléfono de WhatsApp Business
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '893259217214880';
 
@@ -125,6 +128,57 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
   }
 }
 
+// Obtiene respuesta desde OpenAI (ChatGPT)
+async function getAIResponse(userMessage) {
+  if (!OPENAI_API_KEY) {
+    console.error('[Chatbot] OPENAI_API_KEY no configurado');
+    return 'Lo siento, no puedo responder ahora mismo.';
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: 'Eres un asistente breve y útil.' },
+          { role: 'user', content: userMessage }
+        ],
+        max_tokens: 180,
+        temperature: 0.7
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.error('[Chatbot] Error OpenAI:', JSON.stringify(err, null, 2));
+      return 'Lo siento, no puedo responder ahora mismo.';
+    }
+
+    const data = await response.json();
+    const aiMessage = data.choices?.[0]?.message?.content?.trim();
+    return aiMessage || 'Lo siento, no puedo responder ahora mismo.';
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.error('[Chatbot] Timeout en OpenAI');
+      return 'Lo siento, tardé demasiado en responder.';
+    }
+    console.error('[Chatbot] Error llamando a OpenAI:', error.message);
+    return 'Lo siento, no puedo responder ahora mismo.';
+  }
+}
+
 // Función para manejar mensajes de WhatsApp Business API
 async function handleWhatsAppMessage(message, value) {
   const from = message.from;
@@ -149,29 +203,12 @@ async function handleWhatsAppMessage(message, value) {
 
   // Procesar solo mensajes de texto por ahora
   if (messageType === 'text' && messageText) {
-    // Convertir el mensaje a minúsculas para comparación
-    const lowerMessage = messageText.toLowerCase().trim();
-    
-    // Respuestas automáticas simples
-    let response = null;
-    
-    if (lowerMessage.includes('hola') || lowerMessage.includes('hi') || lowerMessage.includes('hello')) {
-      response = 'funcionó';
-    } else if (lowerMessage.includes('adios') || lowerMessage.includes('bye') || lowerMessage.includes('chao')) {
-      response = '¡Hasta luego! Que tengas un buen día.';
-    } else if (lowerMessage.includes('gracias') || lowerMessage.includes('thank')) {
-      response = '¡De nada! Estoy aquí para ayudarte.';
-    } else {
-      // Respuesta por defecto
-      response = `Gracias por tu mensaje: "${messageText}". ¿En qué más puedo ayudarte?`;
-    }
-    
+    const response = await getAIResponse(messageText);
+
     // Enviar respuesta automática
     if (response) {
       console.log(`[Chatbot] Enviando respuesta a ${from}: ${response}`);
-      // Usar el PHONE_NUMBER_ID del metadata si está disponible
       const phoneId = value.metadata?.phone_number_id || null;
-      console.log(`[Chatbot] Usando phoneId: ${phoneId || 'null (usará el configurado)'}`);
       
       try {
         const result = await sendWhatsAppMessage(from, response, phoneId);
