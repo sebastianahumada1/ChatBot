@@ -20,10 +20,11 @@ function handleMessage(event) {
 }
 
 // Función para enviar mensajes de WhatsApp usando la API de Meta
-async function sendWhatsAppMessage(to, message) {
+async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
   try {
     const accessToken = process.env.META_ACCESS_TOKEN || META_ACCESS_TOKEN;
-    const phoneNumberId = process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
+    // Usar el phoneNumberId del webhook si está disponible, sino el configurado
+    const phoneNumberId = phoneNumberIdOverride || process.env.PHONE_NUMBER_ID || PHONE_NUMBER_ID;
     
     if (!accessToken) {
       console.error('[Chatbot] META_ACCESS_TOKEN no configurado');
@@ -34,6 +35,8 @@ async function sendWhatsAppMessage(to, message) {
       console.error('[Chatbot] PHONE_NUMBER_ID no configurado');
       return { success: false, error: 'PHONE_NUMBER_ID no configurado' };
     }
+    
+    console.log(`[Chatbot] Usando PHONE_NUMBER_ID para enviar: ${phoneNumberId}`);
 
     // Usar la versión v22.0 de la API
     const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
@@ -117,12 +120,14 @@ async function handleWhatsAppMessage(message, value) {
     // Enviar respuesta automática
     if (response) {
       console.log(`[Chatbot] Enviando respuesta a ${from}: ${response}`);
-      const result = await sendWhatsAppMessage(from, response);
+      // Usar el PHONE_NUMBER_ID del metadata si está disponible
+      const phoneId = value.metadata?.phone_number_id || null;
+      const result = await sendWhatsAppMessage(from, response, phoneId);
       
       if (result.success) {
-        console.log(`[Chatbot] Respuesta enviada exitosamente`);
+        console.log(`[Chatbot] ✓ Respuesta enviada exitosamente a ${from}`);
       } else {
-        console.error(`[Chatbot] Error al enviar respuesta:`, result.error);
+        console.error(`[Chatbot] ✗ Error al enviar respuesta:`, result.error);
       }
     }
   } else if (messageType !== 'text') {
