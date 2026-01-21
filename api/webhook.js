@@ -53,52 +53,71 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
     };
     
     console.log(`[Chatbot] Enviando mensaje a ${to}...`);
+    console.log(`[Chatbot] URL: ${url}`);
+    console.log(`[Chatbot] Token presente: ${!!accessToken} (primeros 10 chars: ${accessToken?.substring(0, 10)}...)`);
+    
     const startTime = Date.now();
     
     // Crear un AbortController para timeout (8 segundos)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => {
+      console.log(`[Chatbot] ⏱ Timeout alcanzado después de 8 segundos`);
+      controller.abort();
+    }, 8000);
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    const elapsedTime = Date.now() - startTime;
-    console.log(`[Chatbot] Respuesta recibida en ${elapsedTime}ms`);
-    
-    const data = await response.json();
-  
-    if (response.ok) {
-      console.log(`[Chatbot] ✓ Mensaje enviado exitosamente a ${to} en ${elapsedTime}ms`);
-      return { success: true, data };
-    } else {
-      console.error(`[Chatbot] ✗ Error al enviar mensaje (${elapsedTime}ms):`, JSON.stringify(data, null, 2));
+    try {
+      console.log(`[Chatbot] Iniciando fetch...`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
       
-      // Mensajes de error más específicos
-      if (data.error?.code === 190) {
-        console.error(`[Chatbot] Token expirado o inválido. Actualiza META_ACCESS_TOKEN en Vercel.`);
-      } else if (data.error?.code === 100) {
-        console.error(`[Chatbot] PHONE_NUMBER_ID incorrecto o sin permisos.`);
+      clearTimeout(timeoutId);
+      const elapsedTime = Date.now() - startTime;
+      console.log(`[Chatbot] Respuesta recibida en ${elapsedTime}ms`);
+      console.log(`[Chatbot] Status: ${response.status} ${response.statusText}`);
+      
+      const data = await response.json();
+    
+      if (response.ok) {
+        console.log(`[Chatbot] ✓ Mensaje enviado exitosamente a ${to} en ${elapsedTime}ms`);
+        return { success: true, data };
+      } else {
+        console.error(`[Chatbot] ✗ Error al enviar mensaje (${elapsedTime}ms):`, JSON.stringify(data, null, 2));
+        
+        // Mensajes de error más específicos
+        if (data.error?.code === 190) {
+          console.error(`[Chatbot] Token expirado o inválido. Actualiza META_ACCESS_TOKEN en Vercel.`);
+        } else if (data.error?.code === 100) {
+          console.error(`[Chatbot] PHONE_NUMBER_ID incorrecto o sin permisos.`);
+        }
+        
+        return { success: false, error: data };
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      const elapsedTime = Date.now() - startTime;
+      
+      if (fetchError.name === 'AbortError') {
+        console.error(`[Chatbot] ⏱ Timeout: La petición tardó más de 8 segundos (${elapsedTime}ms)`);
+        return { success: false, error: 'Timeout: La petición tardó más de 8 segundos' };
       }
       
-      return { success: false, error: data };
+      console.error(`[Chatbot] ✗ Error en fetch después de ${elapsedTime}ms:`, fetchError.message);
+      console.error(`[Chatbot] Error type:`, fetchError.name);
+      if (fetchError.stack) {
+        console.error(`[Chatbot] Stack:`, fetchError.stack);
+      }
+      return { success: false, error: fetchError.message };
     }
   } catch (error) {
     const elapsedTime = Date.now() - startTime;
-    
-    if (error.name === 'AbortError') {
-      console.error(`[Chatbot] ⏱ Timeout: La petición tardó más de 8 segundos (${elapsedTime}ms)`);
-      return { success: false, error: 'Timeout: La petición tardó más de 8 segundos' };
-    }
-    
-    console.error(`[Chatbot] ✗ Error después de ${elapsedTime}ms:`, error.message);
+    console.error(`[Chatbot] ✗ Error general después de ${elapsedTime}ms:`, error.message);
     if (error.stack) {
       console.error(`[Chatbot] Stack:`, error.stack);
     }
