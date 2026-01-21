@@ -8,6 +8,14 @@
     {
       "source": "/send-message",
       "destination": "/api/send-message"
+    },
+    {
+      "source": "/ai-config",
+      "destination": "/api/ai-config"
+    },
+    {
+      "source": "/conversations",
+      "destination": "/api/conversations"
     }
   ],
   "functions": {
@@ -16,6 +24,12 @@
     },
     "api/send-message.js": {
       "maxDuration": 25
+    },
+    "api/ai-config.js": {
+      "maxDuration": 10
+    },
+    "api/conversations.js": {
+      "maxDuration": 10
     }
   }
 }

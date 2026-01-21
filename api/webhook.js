@@ -1,3 +1,6 @@
+// Supabase
+import { createClient } from '@supabase/supabase-js';
+
 // Token de verificación de Meta (configurado en variables de entorno de Vercel)
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || '1234';
 
@@ -9,6 +12,119 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 // ID del número de teléfono de WhatsApp Business
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '976313762231753';
+
+// Cliente Supabase
+let supabaseClient = null;
+
+function getSupabaseClient() {
+  if (!supabaseClient) {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.warn('[Chatbot] SUPABASE_URL o SUPABASE_ANON_KEY no configurados. Las funciones de base de datos no estarán disponibles.');
+      return null;
+    }
+    
+    supabaseClient = createClient(supabaseUrl, supabaseKey);
+  }
+  return supabaseClient;
+}
+
+// Guardar mensaje en Supabase
+async function saveMessage(phoneNumber, role, content, messageId = null) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible, no se guardará el mensaje');
+      return;
+    }
+    
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        phone_number: phoneNumber,
+        role: role, // 'user' o 'assistant'
+        content: content,
+        message_id: messageId
+      });
+    
+    if (error) {
+      console.error('[Chatbot] Error guardando mensaje:', error);
+    } else {
+      console.log(`[Chatbot] Mensaje guardado: ${role} de ${phoneNumber}`);
+    }
+  } catch (error) {
+    console.error('[Chatbot] Error guardando mensaje:', error);
+  }
+}
+
+// Obtener historial de conversación (últimos 20 mensajes)
+async function getConversationHistory(phoneNumber, limit = 20) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible, no se recuperará historial');
+      return [];
+    }
+    
+    const { data, error } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('phone_number', phoneNumber)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+    
+    if (error) {
+      console.error('[Chatbot] Error obteniendo historial:', error);
+      return [];
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('[Chatbot] Error obteniendo historial:', error);
+    return [];
+  }
+}
+
+// Obtener configuración de IA desde Supabase
+async function getAIConfig() {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible, usando configuración por defecto');
+      return {
+        system_prompt: { text: 'Eres un asistente breve y útil.' },
+        business_info: { name: '', phone: '', address: '', email: '' },
+        business_hours: { monday: '', tuesday: '', wednesday: '', thursday: '', friday: '', saturday: '', sunday: '' },
+        services: { list: [] },
+        rules: { text: '' }
+      };
+    }
+    
+    const { data, error } = await supabase
+      .from('ai_config')
+      .select('key, value');
+    
+    if (error) {
+      console.error('[Chatbot] Error obteniendo configuración:', error);
+      return null;
+    }
+    
+    // Convertir array de {key, value} a objeto
+    const config = {};
+    if (data) {
+      data.forEach(item => {
+        config[item.key] = item.value;
+      });
+    }
+    
+    return config;
+  } catch (error) {
+    console.error('[Chatbot] Error obteniendo configuración:', error);
+    return null;
+  }
+}
 
 // Función para manejar mensajes de Messenger
 function handleMessage(event) {
@@ -128,9 +244,9 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
   }
 }
 
-// Obtiene respuesta desde OpenAI (ChatGPT)
-async function getAIResponse(userMessage) {
-  console.log(`[Chatbot] getAIResponse llamado con: "${userMessage}"`);
+// Obtiene respuesta desde OpenAI (ChatGPT) con contexto y configuración
+async function getAIResponse(userMessage, phoneNumber) {
+  console.log(`[Chatbot] getAIResponse llamado con: "${userMessage}" para ${phoneNumber}`);
   
   const apiKey = process.env.OPENAI_API_KEY || OPENAI_API_KEY;
   if (!apiKey) {
@@ -141,11 +257,72 @@ async function getAIResponse(userMessage) {
   
   console.log(`[Chatbot] OPENAI_API_KEY presente: ${apiKey.substring(0, 10)}...`);
 
+  // Obtener historial de conversación
+  const history = await getConversationHistory(phoneNumber, 20);
+  console.log(`[Chatbot] Historial recuperado: ${history.length} mensajes`);
+  
+  // Obtener configuración de IA
+  const config = await getAIConfig();
+  console.log(`[Chatbot] Configuración de IA obtenida: ${config ? 'Sí' : 'No'}`);
+  
+  // Construir system prompt con configuración
+  let systemPrompt = 'Eres un asistente breve y útil.';
+  if (config) {
+    const systemPromptText = config.system_prompt?.text || 'Eres un asistente breve y útil.';
+    const businessInfo = config.business_info || {};
+    const businessHours = config.business_hours || {};
+    const services = config.services?.list || [];
+    const rules = config.rules?.text || '';
+    
+    // Construir prompt completo
+    let promptParts = [systemPromptText];
+    
+    if (businessInfo.name || businessInfo.phone || businessInfo.address || businessInfo.email) {
+      promptParts.push('\n\nInformación del negocio:');
+      if (businessInfo.name) promptParts.push(`- Nombre: ${businessInfo.name}`);
+      if (businessInfo.phone) promptParts.push(`- Teléfono: ${businessInfo.phone}`);
+      if (businessInfo.address) promptParts.push(`- Dirección: ${businessInfo.address}`);
+      if (businessInfo.email) promptParts.push(`- Email: ${businessInfo.email}`);
+    }
+    
+    if (Object.values(businessHours).some(h => h)) {
+      promptParts.push('\n\nHorarios de atención:');
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const dayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+      days.forEach((day, idx) => {
+        if (businessHours[day]) {
+          promptParts.push(`- ${dayNames[idx]}: ${businessHours[day]}`);
+        }
+      });
+    }
+    
+    if (services.length > 0) {
+      promptParts.push('\n\nServicios ofrecidos:');
+      services.forEach(service => {
+        promptParts.push(`- ${service}`);
+      });
+    }
+    
+    if (rules) {
+      promptParts.push(`\n\nReglas y políticas adicionales:\n${rules}`);
+    }
+    
+    systemPrompt = promptParts.join('\n');
+  }
+  
+  // Construir mensajes con contexto
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history, // Agregar historial
+    { role: 'user', content: userMessage } // Mensaje actual
+  ];
+  
+  console.log(`[Chatbot] Enviando petición a OpenAI con ${messages.length} mensajes...`);
+
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s para dar más tiempo con contexto
 
   try {
-    console.log(`[Chatbot] Enviando petición a OpenAI...`);
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -154,11 +331,8 @@ async function getAIResponse(userMessage) {
       },
       body: JSON.stringify({
         model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: 'Eres un asistente breve y útil.' },
-          { role: 'user', content: userMessage }
-        ],
-        max_tokens: 180,
+        messages: messages,
+        max_tokens: 250,
         temperature: 0.7
       }),
       signal: controller.signal
@@ -176,11 +350,16 @@ async function getAIResponse(userMessage) {
     const data = await response.json();
     const aiMessage = data.choices?.[0]?.message?.content?.trim();
     console.log(`[Chatbot] Mensaje de IA extraído: "${aiMessage}"`);
+    
+    // Guardar ambos mensajes en la base de datos
+    await saveMessage(phoneNumber, 'user', userMessage);
+    await saveMessage(phoneNumber, 'assistant', aiMessage);
+    
     return aiMessage || 'Lo siento, no puedo responder ahora mismo.';
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      console.error('[Chatbot] ✗ Timeout en OpenAI (más de 8 segundos)');
+      console.error('[Chatbot] ✗ Timeout en OpenAI (más de 10 segundos)');
       return 'Lo siento, tardé demasiado en responder.';
     }
     console.error('[Chatbot] ✗ Error llamando a OpenAI:', error.message);
@@ -215,9 +394,13 @@ async function handleWhatsAppMessage(message, value) {
   if (messageType === 'text' && messageText) {
     console.log(`[Chatbot] Procesando mensaje de texto: "${messageText}"`);
     
+    // Guardar mensaje del usuario antes de procesar
+    await saveMessage(from, 'user', messageText, messageId);
+    
     try {
-      console.log(`[Chatbot] Llamando a getAIResponse...`);
-      const response = await getAIResponse(messageText);
+      console.log(`[Chatbot] Llamando a getAIResponse con contexto...`);
+      // Pasar phoneNumber para obtener contexto
+      const response = await getAIResponse(messageText, from);
       console.log(`[Chatbot] Respuesta de IA recibida: "${response}"`);
 
       // Enviar respuesta automática
@@ -232,6 +415,13 @@ async function handleWhatsAppMessage(message, value) {
           if (result.success) {
             console.log(`[Chatbot] ✓ Respuesta enviada exitosamente a ${from}`);
             console.log(`[Chatbot] Datos de respuesta:`, JSON.stringify(result.data, null, 2));
+            
+            // Guardar el ID del mensaje enviado si está disponible
+            if (result.data?.messages?.[0]?.id) {
+              // Actualizar el mensaje assistant con el message_id
+              // Nota: getAIResponse ya guarda el mensaje, pero podemos actualizarlo con el message_id
+              // Por simplicidad, lo dejamos así ya que getAIResponse guarda antes de enviar
+            }
           } else {
             console.error(`[Chatbot] ✗ Error al enviar respuesta a ${from}:`, JSON.stringify(result.error, null, 2));
             console.error(`[Chatbot] Detalles del error:`, result.details || 'Sin detalles adicionales');
