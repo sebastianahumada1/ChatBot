@@ -38,8 +38,8 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
     
     console.log(`[Chatbot] Usando PHONE_NUMBER_ID para enviar: ${phoneNumberId}`);
 
-    // Usar la versión v22.0 de la API
-    const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
+    // Usar la versión v24.0 de la API (coincide con la configuración del webhook)
+    const url = `https://graph.facebook.com/v24.0/${phoneNumberId}/messages`;
     
     console.log(`[Chatbot] Enviando mensaje a ${to}...`);
     

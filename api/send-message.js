@@ -24,8 +24,8 @@ async function sendWhatsAppMessage(to, message) {
       return { success: false, error: 'PHONE_NUMBER_ID no configurado y no se pudo obtener automáticamente.' };
     }
 
-    // Usar la versión v22.0 de la API (la que funciona)
-    const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
+    // Usar la versión v24.0 de la API (coincide con la configuración del webhook)
+    const url = `https://graph.facebook.com/v24.0/${phoneNumberId}/messages`;
     
     console.log(`[Chatbot] Enviando mensaje a ${to} usando PHONE_NUMBER_ID: ${phoneNumberId}...`);
     
