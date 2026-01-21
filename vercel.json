@@ -40,6 +40,10 @@
     {
       "source": "/debug-webhook",
       "destination": "/api/debug-webhook"
+    },
+    {
+      "source": "/subscribe-app",
+      "destination": "/api/subscribe-app"
     }
   ],
   "functions": {
