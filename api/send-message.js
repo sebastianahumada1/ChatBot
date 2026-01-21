@@ -2,7 +2,7 @@
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAARRcq0pgjkBQnRUjZBxM2vlMMlyhEGrTcDkjNUhd0ZBYYpjeby2nZALPZAOFCUTMwakRaCu6O2dJgR0NY0cpwsMld8Si7QaQK06muFPRa0bVVzJtcWqq2sR0RB82krmZBDU0NPiAKqnrvnth1vipnBnEfGA5la3fqCUX7DP2dxLrm41Af9iAFcZBS8H7aC8HlQssBExHBoe4GupgJXhDsduRldUW2GlvZCbMLZCD8W086KLGpJJwOPghZBZCaITl8qC2rjuMt7ZAx5lASZCZATZCkrlBbUV4nu5xePRCAZDZD';
 
 // ID del número de teléfono de WhatsApp Business
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '893259217214880';
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '976313762231753';
 
 
 // Función para enviar mensajes de WhatsApp usando la API de Meta

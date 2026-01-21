@@ -8,7 +8,7 @@ const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 // ID del número de teléfono de WhatsApp Business
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '1600231760978205';
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '976313762231753';
 
 // Función para manejar mensajes de Messenger
 function handleMessage(event) {
