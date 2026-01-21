@@ -163,10 +163,23 @@ export default async function handler(req, res) {
     const body = req.body;
 
     console.log('[Chatbot] ===== WEBHOOK RECIBIDO =====');
+    console.log('[Chatbot] Timestamp:', new Date().toISOString());
     console.log('[Chatbot] Method:', req.method);
     console.log('[Chatbot] Body existe:', !!body);
     console.log('[Chatbot] Body type:', typeof body);
-    console.log('[Chatbot] Body completo:', JSON.stringify(body, null, 2));
+    
+    // Solo loggear el body completo si es pequeño, sino resumir
+    const bodyStr = JSON.stringify(body, null, 2);
+    if (bodyStr.length > 2000) {
+      console.log('[Chatbot] Body (resumido):', {
+        object: body?.object,
+        entryCount: body?.entry?.length || 0,
+        hasChanges: body?.entry?.[0]?.changes?.length > 0
+      });
+      console.log('[Chatbot] Body completo (truncado):', bodyStr.substring(0, 2000) + '...');
+    } else {
+      console.log('[Chatbot] Body completo:', bodyStr);
+    }
     console.log('[Chatbot] Object type:', body?.object);
 
     // Verifica que es un evento de webhook válido

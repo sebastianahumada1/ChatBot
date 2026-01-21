@@ -32,6 +32,10 @@
     {
       "source": "/test-webhook",
       "destination": "/api/test-webhook"
+    },
+    {
+      "source": "/webhook-info",
+      "destination": "/api/webhook-info"
     }
   ],
   "functions": {
