@@ -245,8 +245,8 @@ async function sendWhatsAppMessage(to, message, phoneNumberIdOverride = null) {
 }
 
 // Obtiene respuesta desde OpenAI (ChatGPT) con contexto y configuración
-async function getAIResponse(userMessage, phoneNumber) {
-  console.log(`[Chatbot] getAIResponse llamado con: "${userMessage}" para ${phoneNumber}`);
+async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
+  console.log(`[Chatbot] getAIResponse llamado con: "${userMessage}" para ${phoneNumber}${userMessageId ? ` (messageId: ${userMessageId})` : ''}`);
   
   const apiKey = process.env.OPENAI_API_KEY || OPENAI_API_KEY;
   if (!apiKey) {
@@ -259,7 +259,8 @@ async function getAIResponse(userMessage, phoneNumber) {
 
   // Obtener historial de conversación
   const history = await getConversationHistory(phoneNumber, 20);
-  console.log(`[Chatbot] Historial recuperado: ${history.length} mensajes`);
+  const isNewConversation = history.length === 0;
+  console.log(`[Chatbot] Historial recuperado: ${history.length} mensajes ${isNewConversation ? '(conversación nueva)' : '(conversación existente)'}`);
   
   // Obtener configuración de IA
   const config = await getAIConfig();
@@ -381,17 +382,41 @@ async function getAIResponse(userMessage, phoneNumber) {
     systemPrompt = promptParts.join('\n');
   }
   
+  // Agregar instrucciones sobre el contexto y saludos
+  if (isNewConversation) {
+    systemPrompt += '\n\nINSTRUCCIONES PARA SALUDOS INICIALES:\n- Si el usuario te saluda (hola, buenos días, etc.), responde de manera cálida y natural, presentándote brevemente como el asistente de la clínica.\n- Menciona que estás disponible para ayudar con información sobre servicios, citas, horarios, etc.\n- Usa emojis apropiados (😊, 💎, 🌿) para mantener un tono amigable.\n- Sé conciso pero acogedor.';
+  } else {
+    systemPrompt += '\n\nINSTRUCCIONES DE CONTEXTO:\n- Revisa el historial de la conversación para recordar información previa.\n- Si el usuario menciona algo que ya hablaron antes, haz referencia a ello de manera natural.\n- Mantén la coherencia con mensajes anteriores.\n- Si el usuario pregunta algo que ya respondiste, puedes hacer referencia a la respuesta anterior de forma breve.';
+  }
+  
   // Construir mensajes con contexto
   const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history, // Agregar historial
-    { role: 'user', content: userMessage } // Mensaje actual
+    { role: 'system', content: systemPrompt }
   ];
   
-  console.log(`[Chatbot] Enviando petición a OpenAI con ${messages.length} mensajes...`);
+  // Solo agregar historial si existe (evitar arrays vacíos)
+  if (history.length > 0) {
+    console.log(`[Chatbot] Agregando ${history.length} mensajes del historial al contexto`);
+    // Asegurar que el historial tenga el formato correcto
+    const formattedHistory = history.map(msg => ({
+      role: msg.role || 'user',
+      content: msg.content || ''
+    })).filter(msg => msg.content.trim().length > 0);
+    
+    messages.push(...formattedHistory);
+    console.log(`[Chatbot] Historial formateado: ${formattedHistory.length} mensajes válidos`);
+  }
+  
+  // Agregar mensaje actual
+  messages.push({ role: 'user', content: userMessage });
+  
+  console.log(`[Chatbot] Enviando petición a OpenAI con ${messages.length} mensajes (1 system + ${history.length} historial + 1 user actual)...`);
+  if (history.length > 0) {
+    console.log(`[Chatbot] Últimos mensajes del historial:`, history.slice(-3).map(m => `${m.role}: ${m.content.substring(0, 50)}...`));
+  }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s para dar más tiempo con contexto
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s para dar más tiempo con contexto
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -403,8 +428,8 @@ async function getAIResponse(userMessage, phoneNumber) {
       body: JSON.stringify({
         model: 'gpt-3.5-turbo',
         messages: messages,
-        max_tokens: 250,
-        temperature: 0.7
+        max_tokens: 400, // Aumentado para respuestas más completas
+        temperature: 0.8 // Ligeramente más creativo para saludos más naturales
       }),
       signal: controller.signal
     });
@@ -422,16 +447,19 @@ async function getAIResponse(userMessage, phoneNumber) {
     const aiMessage = data.choices?.[0]?.message?.content?.trim();
     console.log(`[Chatbot] Mensaje de IA extraído: "${aiMessage}"`);
     
-    // Guardar ambos mensajes en la base de datos
-    await saveMessage(phoneNumber, 'user', userMessage);
+    // Guardar ambos mensajes en la base de datos (en orden: user primero, luego assistant)
+    // Solo guardar el mensaje del usuario si no existe ya (evitar duplicados)
+    await saveMessage(phoneNumber, 'user', userMessage, userMessageId);
     await saveMessage(phoneNumber, 'assistant', aiMessage);
+    
+    console.log(`[Chatbot] Mensajes guardados en base de datos para ${phoneNumber}`);
     
     return aiMessage || 'Lo siento, no puedo responder ahora mismo.';
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      console.error('[Chatbot] ✗ Timeout en OpenAI (más de 10 segundos)');
-      return 'Lo siento, tardé demasiado en responder.';
+      console.error('[Chatbot] ✗ Timeout en OpenAI (más de 15 segundos)');
+      return 'Lo siento, tardé demasiado en responder. Por favor intenta de nuevo.';
     }
     console.error('[Chatbot] ✗ Error llamando a OpenAI:', error.message);
     console.error('[Chatbot] Stack:', error.stack);
@@ -465,13 +493,10 @@ async function handleWhatsAppMessage(message, value) {
   if (messageType === 'text' && messageText) {
     console.log(`[Chatbot] Procesando mensaje de texto: "${messageText}"`);
     
-    // Guardar mensaje del usuario antes de procesar
-    await saveMessage(from, 'user', messageText, messageId);
-    
     try {
       console.log(`[Chatbot] Llamando a getAIResponse con contexto...`);
-      // Pasar phoneNumber para obtener contexto
-      const response = await getAIResponse(messageText, from);
+      // Pasar phoneNumber y messageId para obtener contexto y guardar correctamente
+      const response = await getAIResponse(messageText, from, messageId);
       console.log(`[Chatbot] Respuesta de IA recibida: "${response}"`);
 
       // Enviar respuesta automática
