@@ -271,40 +271,111 @@ async function getAIResponse(userMessage, phoneNumber) {
     const systemPromptText = config.system_prompt?.text || 'Eres un asistente breve y útil.';
     const businessInfo = config.business_info || {};
     const businessHours = config.business_hours || {};
-    const services = config.services?.list || [];
-    const rules = config.rules?.text || '';
+    const servicesAndPricing = config.services_and_pricing || {};
+    const rules = config.rules || {};
+    const urgencyProtocol = config.urgency_protocol || {};
+    const bookingRequirements = config.booking_requirements || {};
+    const logisticsAndPayments = config.logistics_and_payments || {};
     
     // Construir prompt completo
     let promptParts = [systemPromptText];
     
-    if (businessInfo.name || businessInfo.phone || businessInfo.address || businessInfo.email) {
+    // Información del negocio
+    if (businessInfo.brand || businessInfo.legal_name) {
       promptParts.push('\n\nInformación del negocio:');
-      if (businessInfo.name) promptParts.push(`- Nombre: ${businessInfo.name}`);
-      if (businessInfo.phone) promptParts.push(`- Teléfono: ${businessInfo.phone}`);
-      if (businessInfo.address) promptParts.push(`- Dirección: ${businessInfo.address}`);
-      if (businessInfo.email) promptParts.push(`- Email: ${businessInfo.email}`);
+      if (businessInfo.brand) promptParts.push(`- Marca: ${businessInfo.brand}`);
+      if (businessInfo.legal_name) promptParts.push(`- Nombre legal: ${businessInfo.legal_name}`);
+      
+      if (businessInfo.locations && Array.isArray(businessInfo.locations)) {
+        promptParts.push('\nSedes:');
+        businessInfo.locations.forEach(loc => {
+          promptParts.push(`- ${loc.sede}: ${loc.address}${loc.reference ? ` (${loc.reference})` : ''}`);
+        });
+      }
+      
+      if (businessInfo.contact) {
+        promptParts.push('\nContacto:');
+        if (businessInfo.contact.whatsapp) promptParts.push(`- WhatsApp: ${businessInfo.contact.whatsapp}`);
+        if (businessInfo.contact.email) promptParts.push(`- Email: ${businessInfo.contact.email}`);
+        if (businessInfo.contact.instagram) promptParts.push(`- Instagram: ${businessInfo.contact.instagram}`);
+        if (businessInfo.contact.facebook) promptParts.push(`- Facebook: ${businessInfo.contact.facebook}`);
+      }
     }
     
-    if (Object.values(businessHours).some(h => h)) {
+    // Horarios por sede
+    if (businessHours.rodadero || businessHours.manzanares) {
       promptParts.push('\n\nHorarios de atención:');
-      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      const dayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-      days.forEach((day, idx) => {
-        if (businessHours[day]) {
-          promptParts.push(`- ${dayNames[idx]}: ${businessHours[day]}`);
-        }
-      });
+      if (businessHours.rodadero) promptParts.push(`- Rodadero: ${businessHours.rodadero}`);
+      if (businessHours.manzanares) promptParts.push(`- Manzanares: ${businessHours.manzanares}`);
     }
     
-    if (services.length > 0) {
+    // Servicios y precios
+    if (servicesAndPricing.list && servicesAndPricing.list.length > 0) {
       promptParts.push('\n\nServicios ofrecidos:');
-      services.forEach(service => {
+      servicesAndPricing.list.forEach(service => {
         promptParts.push(`- ${service}`);
       });
+      if (servicesAndPricing.policy) {
+        promptParts.push(`\nPolítica de precios: ${servicesAndPricing.policy}`);
+      }
+      if (servicesAndPricing.teleconsulta) {
+        promptParts.push(`\nTeleconsulta: ${servicesAndPricing.teleconsulta.cost} (${servicesAndPricing.teleconsulta.duration}) - ${servicesAndPricing.teleconsulta.hours}`);
+      }
     }
     
-    if (rules) {
-      promptParts.push(`\n\nReglas y políticas adicionales:\n${rules}`);
+    // Reglas
+    if (rules.anti_hallucination) {
+      promptParts.push(`\n\nREGLA CRÍTICA: ${rules.anti_hallucination}`);
+    }
+    if (rules.habeas_data) {
+      promptParts.push(`\nHabeas Data: ${rules.habeas_data}`);
+    }
+    if (rules.priorities) {
+      promptParts.push('\nPrioridades:');
+      if (rules.priorities.alta) promptParts.push(`- Alta: ${rules.priorities.alta}`);
+      if (rules.priorities.media) promptParts.push(`- Media: ${rules.priorities.media}`);
+      if (rules.priorities.baja) promptParts.push(`- Baja: ${rules.priorities.baja}`);
+    }
+    if (rules.health_restrictions && Array.isArray(rules.health_restrictions)) {
+      promptParts.push('\nRestricciones médicas:');
+      rules.health_restrictions.forEach(restriction => {
+        promptParts.push(`- ${restriction}`);
+      });
+    }
+    
+    // Protocolo de urgencias
+    if (urgencyProtocol.keywords && urgencyProtocol.script) {
+      promptParts.push(`\n\nProtocolo de urgencias: Si detectas palabras clave como "${urgencyProtocol.keywords.join(', ')}", usa este script: ${urgencyProtocol.script}`);
+    }
+    
+    // Requisitos de agendamiento
+    if (bookingRequirements.fields) {
+      promptParts.push('\n\nRequisitos para agendar:');
+      Object.entries(bookingRequirements.fields).forEach(([field, desc]) => {
+        promptParts.push(`- ${field}: ${desc}`);
+      });
+      if (bookingRequirements.alternatives_rule) {
+        promptParts.push(`\nRegla de alternativas: ${bookingRequirements.alternatives_rule}`);
+      }
+    }
+    
+    // Logística y pagos
+    if (logisticsAndPayments.parking || logisticsAndPayments.payment_methods) {
+      promptParts.push('\n\nLogística:');
+      if (logisticsAndPayments.parking) {
+        if (logisticsAndPayments.parking.rodadero) {
+          promptParts.push(`- Parqueo Rodadero: ${logisticsAndPayments.parking.rodadero}`);
+        }
+        if (logisticsAndPayments.parking.manzanares) {
+          promptParts.push(`- Parqueo Manzanares: ${logisticsAndPayments.parking.manzanares}`);
+        }
+      }
+      if (logisticsAndPayments.accessibility) {
+        promptParts.push(`- Accesibilidad: ${logisticsAndPayments.accessibility}`);
+      }
+      if (logisticsAndPayments.payment_methods && Array.isArray(logisticsAndPayments.payment_methods)) {
+        promptParts.push(`\nMétodos de pago: ${logisticsAndPayments.payment_methods.join(', ')}`);
+      }
     }
     
     systemPrompt = promptParts.join('\n');
