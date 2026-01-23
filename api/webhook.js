@@ -238,16 +238,63 @@ function generateAvailableSlots(businessHours, startDate, daysAhead = 30) {
   
   // Mapeo de días de la semana
   const dayMap = {
-    0: 'sunday',
-    1: 'monday',
-    2: 'tuesday',
-    3: 'wednesday',
-    4: 'thursday',
-    5: 'friday',
-    6: 'saturday'
+    0: 'sunday',    // Domingo - cerrado
+    1: 'monday',    // Lunes - L-V
+    2: 'tuesday',   // Martes - L-V
+    3: 'wednesday', // Miércoles - L-V
+    4: 'thursday',  // Jueves - L-V
+    5: 'friday',    // Viernes - L-V
+    6: 'saturday'   // Sábado - horario especial
   };
   
-  // Horarios por defecto si no hay configuración
+  // Horarios específicos por sede y día
+  // Formato esperado: "L-V 08:00–18:00; Sáb 08:00–13:00; Festivos y domingos: cerrado"
+  const parseSchedule = (hoursString, location, dayOfWeek) => {
+    if (!hoursString || typeof hoursString !== 'string') {
+      return null;
+    }
+    
+    // Domingo siempre cerrado
+    if (dayOfWeek === 'sunday') {
+      return null;
+    }
+    
+    // Verificar si menciona "cerrado" o "festivos"
+    if (hoursString.toLowerCase().includes('cerrado')) {
+      // Si es domingo o festivo, retornar null
+      if (dayOfWeek === 'sunday') {
+        return null;
+      }
+    }
+    
+    // Lunes a Viernes (L-V)
+    if (dayOfWeek !== 'saturday' && dayOfWeek !== 'sunday') {
+      const lvMatch = hoursString.match(/L-V\s+(\d{2}:\d{2})[–-](\d{2}:\d{2})/);
+      if (lvMatch) {
+        return {
+          start: lvMatch[1],
+          end: lvMatch[2],
+          interval: 30 // Intervalo de 30 minutos por defecto
+        };
+      }
+    }
+    
+    // Sábado (Sáb)
+    if (dayOfWeek === 'saturday') {
+      const sabMatch = hoursString.match(/Sáb\s+(\d{2}:\d{2})[–-](\d{2}:\d{2})/);
+      if (sabMatch) {
+        return {
+          start: sabMatch[1],
+          end: sabMatch[2],
+          interval: 30
+        };
+      }
+    }
+    
+    return null;
+  };
+  
+  // Horarios por defecto si no hay configuración (solo para L-V)
   const defaultHours = {
     rodadero: { start: '08:00', end: '18:00', interval: 30 },
     manzanares: { start: '08:00', end: '17:00', interval: 30 }
@@ -258,30 +305,29 @@ function generateAvailableSlots(businessHours, startDate, daysAhead = 30) {
     currentDate.setDate(today.getDate() + day);
     const dayOfWeek = dayMap[currentDate.getDay()];
     
+    // Domingo siempre cerrado (no generar slots)
+    if (dayOfWeek === 'sunday') {
+      continue;
+    }
+    
     // Procesar cada ubicación
     ['rodadero', 'manzanares'].forEach(location => {
-      const hours = businessHours[location] || defaultHours[location];
+      const hours = businessHours[location];
       
-      // Parsear horarios (formato: "L-V 08:00–18:00; Sáb 08:00–13:00")
+      // Parsear horarios según el día
       let schedule = null;
-      if (typeof hours === 'string') {
-        // Lógica simple: si es lunes-viernes y el día está en ese rango
-        if (hours.includes('L-V') && dayOfWeek !== 'saturday' && dayOfWeek !== 'sunday') {
-          const match = hours.match(/L-V\s+(\d{2}:\d{2})[–-](\d{2}:\d{2})/);
-          if (match) {
-            schedule = { start: match[1], end: match[2] };
-          }
-        } else if (hours.includes('Sáb') && dayOfWeek === 'saturday') {
-          const match = hours.match(/Sáb\s+(\d{2}:\d{2})[–-](\d{2}:\d{2})/);
-          if (match) {
-            schedule = { start: match[1], end: match[2] };
-          }
-        }
+      if (hours) {
+        schedule = parseSchedule(hours, location, dayOfWeek);
       }
       
-      // Si no se pudo parsear, usar defaults
-      if (!schedule) {
+      // Si no se pudo parsear y es día laboral (L-V), usar defaults
+      if (!schedule && dayOfWeek !== 'saturday' && dayOfWeek !== 'sunday') {
         schedule = defaultHours[location];
+      }
+      
+      // Si no hay schedule, no generar slots (día cerrado)
+      if (!schedule) {
+        return; // Continuar con la siguiente ubicación
       }
       
       // Generar slots para este día y ubicación
@@ -294,6 +340,11 @@ function generateAvailableSlots(businessHours, startDate, daysAhead = 30) {
       
       const endTime = new Date(currentDate);
       endTime.setHours(endHour, endMin, 0, 0);
+      
+      // No generar slots si el horario de fin es antes del inicio
+      if (endTime <= currentTime) {
+        return;
+      }
       
       while (currentTime < endTime) {
         slots.push({
