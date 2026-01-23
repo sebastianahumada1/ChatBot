@@ -331,8 +331,10 @@ export default async function handler(req, res) {
         // Debug: mostrar todas las citas cargadas
         console.log('[DEBUG] Citas cargadas:', appointments.map(apt => ({
           appointment_date: apt.appointment_date,
+          tipo: typeof apt.appointment_date,
           parsed: getDateStringFromDB(apt.appointment_date),
-          time: apt.appointment_time
+          time: apt.appointment_time,
+          raw: JSON.stringify(apt.appointment_date)
         })));
         if (currentView === 'day') {
           renderDayView();
@@ -540,9 +542,9 @@ export default async function handler(req, res) {
         const dayStr = day.dateString || getColombiaDateString(day.fullDate);
         const dayAppointments = appointments.filter(apt => {
           const aptDateStr = getDateStringFromDB(apt.appointment_date);
-          // Debug para la fecha problemática
-          if (aptDateStr && (aptDateStr.includes('2026-01-23') || (apt.appointment_date && String(apt.appointment_date).includes('2026-01-23')))) {
-            console.log('[DEBUG Mes] Cita encontrada - BD:', apt.appointment_date, 'Tipo:', typeof apt.appointment_date, 'Parseado:', aptDateStr, 'Día calendario:', dayStr, 'Match:', aptDateStr === dayStr);
+          // Debug para todas las citas y días
+          if (aptDateStr) {
+            console.log('[DEBUG Mes] Comparando - Cita BD:', apt.appointment_date, 'Parseado:', aptDateStr, 'vs Día:', dayStr, 'Match:', aptDateStr === dayStr);
           }
           return aptDateStr === dayStr;
         });
