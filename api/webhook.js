@@ -228,101 +228,29 @@ async function createOrUpdatePatient(phoneNumber, patientData) {
   }
 }
 
-// Extraer información del paciente de la conversación usando IA
-async function extractPatientInfo(conversationHistory, currentMessage) {
+// Detectar agendamiento y extraer información del paciente en una sola llamada (optimizado)
+async function detectBookingAndExtractPatientInfo(conversationHistory, currentMessage) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.warn('[Chatbot] OPENAI_API_KEY no disponible para extraer información del paciente');
-      return null;
+      console.warn('[Chatbot] OPENAI_API_KEY no disponible');
+      return { isBooking: false, patientInfo: null };
     }
     
-    // Construir prompt para extraer información
-    const extractionPrompt = `Eres un asistente que extrae información estructurada de conversaciones. Analiza la siguiente conversación y extrae la información del paciente si está disponible.
+    // Prompt combinado para detectar agendamiento y extraer información
+    const combinedPrompt = `Analiza la siguiente conversación y:
+1. Determina si el usuario está AGENDANDO o CONFIRMANDO una cita médica
+2. Si es agendamiento, extrae la información del paciente
 
-INSTRUCCIONES:
-- Extrae el NOMBRE completo del paciente si se menciona
-- Extrae el DOCUMENTO DE IDENTIDAD (cédula, pasaporte, etc.) si se menciona
-- Extrae el CORREO ELECTRÓNICO si se menciona
-- Si alguna información no está disponible, devuelve null para ese campo
-- Responde SOLO con un JSON válido en este formato exacto:
+Responde SOLO con un JSON válido en este formato exacto:
 {
-  "name": "nombre completo o null",
-  "document": "documento o null",
-  "email": "correo o null"
-}
-
-Conversación:
-${conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
-Usuario actual: ${currentMessage}`;
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: extractionPrompt },
-          { role: 'user', content: 'Extrae la información del paciente de esta conversación.' }
-        ],
-        max_tokens: 200,
-        temperature: 0.3
-      })
-    });
-
-    if (!response.ok) {
-      console.error('[Chatbot] Error en extracción de información:', response.status);
-      return null;
-    }
-
-    const data = await response.json();
-    const extractedText = data.choices?.[0]?.message?.content?.trim();
-    
-    if (!extractedText) {
-      return null;
-    }
-
-    // Limpiar el texto (puede venir con markdown code blocks)
-    const cleanedText = extractedText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
-    try {
-      const patientInfo = JSON.parse(cleanedText);
-      console.log('[Chatbot] Información extraída del paciente:', patientInfo);
-      
-      // Validar que al menos un campo tenga valor
-      if (patientInfo.name || patientInfo.document || patientInfo.email) {
-        return {
-          name: patientInfo.name && patientInfo.name !== 'null' ? patientInfo.name : null,
-          document: patientInfo.document && patientInfo.document !== 'null' ? patientInfo.document : null,
-          email: patientInfo.email && patientInfo.email !== 'null' ? patientInfo.email : null
-        };
-      }
-      
-      return null;
-    } catch (parseError) {
-      console.error('[Chatbot] Error parseando información extraída:', parseError);
-      return null;
-    }
-  } catch (error) {
-    console.error('[Chatbot] Error extrayendo información del paciente:', error);
-    return null;
+  "isBooking": true o false,
+  "patientInfo": {
+    "name": "nombre completo o null",
+    "document": "documento o null",
+    "email": "correo o null"
   }
 }
-
-// Detectar si se está agendando una cita
-async function detectAppointmentBooking(conversationHistory, currentMessage) {
-  try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return false;
-    }
-    
-    const detectionPrompt = `Analiza la siguiente conversación y determina si el usuario está AGENDANDO o CONFIRMANDO una cita médica.
-
-Responde SOLO con "true" o "false" (sin comillas, sin explicaciones).
 
 Indicadores de agendamiento:
 - El usuario confirma una fecha y hora para una cita
@@ -334,34 +262,81 @@ Conversación:
 ${conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
 Usuario actual: ${currentMessage}`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: detectionPrompt },
-          { role: 'user', content: '¿Se está agendando una cita en esta conversación?' }
-        ],
-        max_tokens: 10,
-        temperature: 0.1
-      })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout para esta llamada
 
-    if (!response.ok) {
-      return false;
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            { role: 'system', content: combinedPrompt },
+            { role: 'user', content: 'Analiza la conversación y responde con el JSON.' }
+          ],
+          max_tokens: 150,
+          temperature: 0.2
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.error('[Chatbot] Error en detección/extracción:', response.status);
+        return { isBooking: false, patientInfo: null };
+      }
+
+      const data = await response.json();
+      const extractedText = data.choices?.[0]?.message?.content?.trim();
+      
+      if (!extractedText) {
+        return { isBooking: false, patientInfo: null };
+      }
+
+      // Limpiar el texto (puede venir con markdown code blocks)
+      const cleanedText = extractedText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      
+      try {
+        const result = JSON.parse(cleanedText);
+        
+        const isBooking = result.isBooking === true;
+        let patientInfo = null;
+        
+        if (isBooking && result.patientInfo) {
+          const info = result.patientInfo;
+          // Validar que al menos un campo tenga valor
+          if (info.name || info.document || info.email) {
+            patientInfo = {
+              name: info.name && info.name !== 'null' && info.name !== null ? info.name : null,
+              document: info.document && info.document !== 'null' && info.document !== null ? info.document : null,
+              email: info.email && info.email !== 'null' && info.email !== null ? info.email : null
+            };
+          }
+        }
+        
+        console.log('[Chatbot] Detección/extracción:', { isBooking, patientInfo });
+        return { isBooking, patientInfo };
+      } catch (parseError) {
+        console.error('[Chatbot] Error parseando resultado:', parseError);
+        return { isBooking: false, patientInfo: null };
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.warn('[Chatbot] Timeout en detección/extracción (5s)');
+      } else {
+        console.error('[Chatbot] Error en fetch:', fetchError);
+      }
+      return { isBooking: false, patientInfo: null };
     }
-
-    const data = await response.json();
-    const result = data.choices?.[0]?.message?.content?.trim().toLowerCase();
-    
-    return result === 'true';
   } catch (error) {
-    console.error('[Chatbot] Error detectando agendamiento:', error);
-    return false;
+    console.error('[Chatbot] Error en detección/extracción:', error);
+    return { isBooking: false, patientInfo: null };
   }
 }
 
@@ -693,55 +668,56 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     
     console.log(`[Chatbot] Mensajes guardados en base de datos para ${phoneNumber}`);
     
-    // WORKFLOW: Detectar agendamiento de cita y crear/actualizar paciente
-    try {
-      // Obtener historial completo incluyendo el mensaje actual
-      const fullHistory = await getConversationHistory(phoneNumber, 20);
-      const fullHistoryWithCurrent = [
-        ...fullHistory,
-        { role: 'user', content: userMessage },
-        { role: 'assistant', content: aiMessage }
-      ];
-      
-      // Detectar si se está agendando una cita
-      const isBooking = await detectAppointmentBooking(fullHistory.slice(0, -1), userMessage);
-      
-      if (isBooking) {
-        console.log(`[Chatbot] 🎯 Agendamiento detectado para ${phoneNumber}`);
+    // WORKFLOW: Detectar agendamiento de cita y crear/actualizar paciente (optimizado)
+    // Ejecutar de forma asíncrona para no bloquear la respuesta (fire and forget)
+    (async () => {
+      try {
+        // Obtener historial completo incluyendo el mensaje actual
+        const fullHistory = await getConversationHistory(phoneNumber, 20);
+        const fullHistoryWithCurrent = [
+          ...fullHistory,
+          { role: 'user', content: userMessage },
+          { role: 'assistant', content: aiMessage }
+        ];
         
-        // Verificar si el paciente ya existe
-        const existingPatient = await getPatientByPhone(phoneNumber);
+        // Detectar agendamiento y extraer información en una sola llamada (optimizado)
+        const { isBooking, patientInfo } = await detectBookingAndExtractPatientInfo(
+          fullHistoryWithCurrent.slice(0, -2), // Sin los últimos 2 mensajes (user y assistant actuales)
+          userMessage
+        );
         
-        if (!existingPatient || !existingPatient.name || !existingPatient.document || !existingPatient.email) {
-          console.log(`[Chatbot] Extrayendo información del paciente...`);
+        if (isBooking) {
+          console.log(`[Chatbot] 🎯 Agendamiento detectado para ${phoneNumber}`);
           
-          // Extraer información del paciente de la conversación
-          const patientInfo = await extractPatientInfo(fullHistoryWithCurrent, userMessage);
+          // Verificar si el paciente ya existe
+          const existingPatient = await getPatientByPhone(phoneNumber);
           
-          if (patientInfo && (patientInfo.name || patientInfo.document || patientInfo.email)) {
-            // Crear o actualizar paciente
-            const patient = await createOrUpdatePatient(phoneNumber, patientInfo);
-            
-            if (patient) {
-              console.log(`[Chatbot] ✓ Paciente procesado: ${phoneNumber}`, {
-                name: patient.name,
-                document: patient.document,
-                email: patient.email
-              });
+          if (!existingPatient || !existingPatient.name || !existingPatient.document || !existingPatient.email) {
+            if (patientInfo && (patientInfo.name || patientInfo.document || patientInfo.email)) {
+              // Crear o actualizar paciente
+              const patient = await createOrUpdatePatient(phoneNumber, patientInfo);
+              
+              if (patient) {
+                console.log(`[Chatbot] ✓ Paciente procesado: ${phoneNumber}`, {
+                  name: patient.name,
+                  document: patient.document,
+                  email: patient.email
+                });
+              } else {
+                console.warn(`[Chatbot] ⚠ No se pudo crear/actualizar paciente para ${phoneNumber}`);
+              }
             } else {
-              console.warn(`[Chatbot] ⚠ No se pudo crear/actualizar paciente para ${phoneNumber}`);
+              console.log(`[Chatbot] No se pudo extraer información suficiente del paciente`);
             }
           } else {
-            console.log(`[Chatbot] No se pudo extraer información suficiente del paciente`);
+            console.log(`[Chatbot] Paciente ya existe con información completa: ${phoneNumber}`);
           }
-        } else {
-          console.log(`[Chatbot] Paciente ya existe con información completa: ${phoneNumber}`);
         }
+      } catch (workflowError) {
+        // No fallar la respuesta si el workflow tiene un error
+        console.error('[Chatbot] Error en workflow de paciente:', workflowError);
       }
-    } catch (workflowError) {
-      // No fallar la respuesta si el workflow tiene un error
-      console.error('[Chatbot] Error en workflow de paciente:', workflowError);
-    }
+    })(); // IIFE para ejecutar de forma asíncrona
     
     return aiMessage || 'Lo siento, no puedo responder ahora mismo.';
   } catch (error) {
