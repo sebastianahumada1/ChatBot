@@ -133,9 +133,32 @@ export default async function handler(req, res) {
   </div>
 
   <script>
-    // Prevenir errores de Shadow DOM y otros conflictos
+    // Prevenir errores de Shadow DOM y otros conflictos de extensiones del navegador
     (function() {
       'use strict';
+      
+      // Capturar y suprimir errores de Shadow DOM de extensiones (como Weava)
+      const originalError = window.onerror;
+      window.onerror = function(msg, url, line, col, error) {
+        // Si es un error de Shadow DOM de extensiones, ignorarlo
+        if (msg && msg.includes('attachShadow') && msg.includes('Shadow root')) {
+          console.warn('[Calendario] Error de extensión del navegador ignorado:', msg);
+          return true; // Prevenir que el error se propague
+        }
+        // Para otros errores, usar el manejador original si existe
+        if (originalError) {
+          return originalError.apply(this, arguments);
+        }
+        return false;
+      };
+      
+      // También capturar errores no manejados de Promise
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason && event.reason.message && event.reason.message.includes('attachShadow')) {
+          console.warn('[Calendario] Error de Promise de extensión ignorado');
+          event.preventDefault();
+        }
+      });
       
       // Configuración de huso horario: Colombia (GMT-5)
       const TIMEZONE = 'America/Bogota';
