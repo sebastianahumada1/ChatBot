@@ -505,9 +505,13 @@ export default async function handler(req, res) {
       }
       
       grid.innerHTML = days.map(day => {
+        const dayStr = getColombiaDateString(day.fullDate);
         const dayAppointments = appointments.filter(apt => {
           const aptDateStr = getDateStringFromDB(apt.appointment_date);
-          const dayStr = getColombiaDateString(day.fullDate);
+          // Debug para la fecha problemática
+          if (aptDateStr && (aptDateStr.includes('2026-01-23') || (apt.appointment_date && String(apt.appointment_date).includes('2026-01-23')))) {
+            console.log('[DEBUG Mes] Cita encontrada - BD:', apt.appointment_date, 'Tipo:', typeof apt.appointment_date, 'Parseado:', aptDateStr, 'Día calendario:', dayStr, 'Match:', aptDateStr === dayStr);
+          }
           return aptDateStr === dayStr;
         });
         
