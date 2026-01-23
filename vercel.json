@@ -16,6 +16,14 @@
     {
       "source": "/conversations",
       "destination": "/api/conversations"
+    },
+    {
+      "source": "/chats",
+      "destination": "/api/chats"
+    },
+    {
+      "source": "/api/appointments",
+      "destination": "/api/appointments"
     }
   ],
   "functions": {
@@ -29,6 +37,12 @@
       "maxDuration": 10
     },
     "api/conversations.js": {
+      "maxDuration": 10
+    },
+    "api/chats.js": {
+      "maxDuration": 10
+    },
+    "api/appointments.js": {
       "maxDuration": 10
     }
   }

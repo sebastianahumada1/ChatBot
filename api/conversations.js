@@ -79,10 +79,40 @@ export default async function handler(req, res) {
         }
       }
       
-      // Obtener conteo de mensajes por número
+      // Obtener información completa de cada conversación
       const conversations = Array.from(conversationsMap.values());
       
+      // Obtener información de pacientes y últimos mensajes
       for (const conv of conversations) {
+        // Obtener paciente
+        const { data: patient } = await supabase
+          .from('patients')
+          .select('name, document, email')
+          .eq('phone_number', conv.phoneNumber)
+          .single();
+        
+        if (patient) {
+          conv.patientName = patient.name;
+          conv.document = patient.document;
+          conv.email = patient.email;
+        }
+        
+        // Obtener último mensaje
+        const { data: lastMessage } = await supabase
+          .from('messages')
+          .select('content, role, created_at')
+          .eq('phone_number', conv.phoneNumber)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (lastMessage) {
+          conv.lastMessage = lastMessage.content;
+          conv.lastMessageRole = lastMessage.role;
+          conv.lastMessageAt = lastMessage.created_at;
+        }
+        
+        // Obtener conteo de mensajes
         const { count } = await supabase
           .from('messages')
           .select('*', { count: 'exact', head: true })
