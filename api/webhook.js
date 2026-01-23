@@ -228,6 +228,352 @@ async function createOrUpdatePatient(phoneNumber, patientData) {
   }
 }
 
+// ==================== FUNCIONES DE GESTIÓN DE CITAS ====================
+
+// Generar slots disponibles basándose en horarios de negocio
+function generateAvailableSlots(businessHours, startDate, daysAhead = 30) {
+  const slots = [];
+  const today = new Date(startDate);
+  today.setHours(0, 0, 0, 0);
+  
+  // Mapeo de días de la semana
+  const dayMap = {
+    0: 'sunday',
+    1: 'monday',
+    2: 'tuesday',
+    3: 'wednesday',
+    4: 'thursday',
+    5: 'friday',
+    6: 'saturday'
+  };
+  
+  // Horarios por defecto si no hay configuración
+  const defaultHours = {
+    rodadero: { start: '08:00', end: '18:00', interval: 30 },
+    manzanares: { start: '08:00', end: '17:00', interval: 30 }
+  };
+  
+  for (let day = 0; day < daysAhead; day++) {
+    const currentDate = new Date(today);
+    currentDate.setDate(today.getDate() + day);
+    const dayOfWeek = dayMap[currentDate.getDay()];
+    
+    // Procesar cada ubicación
+    ['rodadero', 'manzanares'].forEach(location => {
+      const hours = businessHours[location] || defaultHours[location];
+      
+      // Parsear horarios (formato: "L-V 08:00–18:00; Sáb 08:00–13:00")
+      let schedule = null;
+      if (typeof hours === 'string') {
+        // Lógica simple: si es lunes-viernes y el día está en ese rango
+        if (hours.includes('L-V') && dayOfWeek !== 'saturday' && dayOfWeek !== 'sunday') {
+          const match = hours.match(/L-V\s+(\d{2}:\d{2})[–-](\d{2}:\d{2})/);
+          if (match) {
+            schedule = { start: match[1], end: match[2] };
+          }
+        } else if (hours.includes('Sáb') && dayOfWeek === 'saturday') {
+          const match = hours.match(/Sáb\s+(\d{2}:\d{2})[–-](\d{2}:\d{2})/);
+          if (match) {
+            schedule = { start: match[1], end: match[2] };
+          }
+        }
+      }
+      
+      // Si no se pudo parsear, usar defaults
+      if (!schedule) {
+        schedule = defaultHours[location];
+      }
+      
+      // Generar slots para este día y ubicación
+      const [startHour, startMin] = schedule.start.split(':').map(Number);
+      const [endHour, endMin] = schedule.end.split(':').map(Number);
+      const interval = schedule.interval || 30;
+      
+      let currentTime = new Date(currentDate);
+      currentTime.setHours(startHour, startMin, 0, 0);
+      
+      const endTime = new Date(currentDate);
+      endTime.setHours(endHour, endMin, 0, 0);
+      
+      while (currentTime < endTime) {
+        slots.push({
+          date: currentDate.toISOString().split('T')[0],
+          time: `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}`,
+          location: location,
+          datetime: new Date(currentTime)
+        });
+        
+        currentTime.setMinutes(currentTime.getMinutes() + interval);
+      }
+    });
+  }
+  
+  return slots;
+}
+
+// Consultar slots disponibles para una fecha y ubicación
+async function getAvailableSlots(date, location = null, daysAhead = 7) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible para consultar slots');
+      return [];
+    }
+    
+    // Obtener horarios de negocio
+    const config = await getAIConfig();
+    const businessHours = config?.business_hours || {};
+    
+    // Generar todos los slots posibles
+    const allSlots = generateAvailableSlots(businessHours, date, daysAhead);
+    
+    // Filtrar por ubicación si se especifica
+    let filteredSlots = allSlots;
+    if (location) {
+      filteredSlots = allSlots.filter(slot => slot.location === location);
+    }
+    
+    // Obtener citas ocupadas para el rango de fechas
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + daysAhead);
+    
+    const { data: occupiedAppointments, error } = await supabase
+      .from('appointments')
+      .select('appointment_date, appointment_time, location')
+      .gte('appointment_date', startDate.toISOString().split('T')[0])
+      .lte('appointment_date', endDate.toISOString().split('T')[0])
+      .in('status', ['scheduled', 'confirmed'])
+      .order('appointment_date', { ascending: true })
+      .order('appointment_time', { ascending: true });
+    
+    if (error) {
+      console.error('[Chatbot] Error obteniendo citas ocupadas:', error);
+      return filteredSlots; // Retornar todos los slots si hay error
+    }
+    
+    // Crear set de slots ocupados para búsqueda rápida
+    const occupiedSlots = new Set();
+    if (occupiedAppointments) {
+      occupiedAppointments.forEach(apt => {
+        occupiedSlots.add(`${apt.appointment_date}|${apt.appointment_time}|${apt.location}`);
+      });
+    }
+    
+    // Filtrar slots disponibles (no ocupados)
+    const availableSlots = filteredSlots.filter(slot => {
+      const slotKey = `${slot.date}|${slot.time}|${slot.location}`;
+      return !occupiedSlots.has(slotKey);
+    });
+    
+    console.log(`[Chatbot] Slots disponibles encontrados: ${availableSlots.length} de ${filteredSlots.length}`);
+    return availableSlots;
+  } catch (error) {
+    console.error('[Chatbot] Error consultando slots disponibles:', error);
+    return [];
+  }
+}
+
+// Crear/reservar una cita
+async function createAppointment(phoneNumber, appointmentData) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible para crear cita');
+      return null;
+    }
+    
+    const { date, time, location, service, notes } = appointmentData;
+    
+    // Obtener o crear paciente
+    const patient = await getPatientByPhone(phoneNumber);
+    if (!patient) {
+      console.warn(`[Chatbot] Paciente no encontrado para ${phoneNumber}`);
+      return null;
+    }
+    
+    // Verificar que el slot esté disponible
+    const availableSlots = await getAvailableSlots(date, location, 1);
+    const slotKey = `${date}|${time}|${location}`;
+    const isAvailable = availableSlots.some(slot => 
+      `${slot.date}|${slot.time}|${slot.location}` === slotKey
+    );
+    
+    if (!isAvailable) {
+      console.warn(`[Chatbot] Slot no disponible: ${slotKey}`);
+      return { error: 'Slot no disponible' };
+    }
+    
+    // Crear la cita
+    const { data, error } = await supabase
+      .from('appointments')
+      .insert({
+        patient_id: patient.id,
+        phone_number: phoneNumber,
+        appointment_date: date,
+        appointment_time: time,
+        location: location || 'rodadero',
+        service: service || null,
+        status: 'scheduled',
+        notes: notes || null
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      // Si es error de constraint único, el slot ya está ocupado
+      if (error.code === '23505') {
+        console.warn(`[Chatbot] Slot ya ocupado: ${slotKey}`);
+        return { error: 'Slot ya ocupado' };
+      }
+      console.error('[Chatbot] Error creando cita:', error);
+      return null;
+    }
+    
+    console.log(`[Chatbot] ✓ Cita creada: ${date} ${time} en ${location} para ${phoneNumber}`);
+    return data;
+  } catch (error) {
+    console.error('[Chatbot] Error creando cita:', error);
+    return null;
+  }
+}
+
+// Obtener citas de un paciente
+async function getPatientAppointments(phoneNumber, status = null) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible para consultar citas');
+      return [];
+    }
+    
+    let query = supabase
+      .from('appointments')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .order('appointment_date', { ascending: true })
+      .order('appointment_time', { ascending: true });
+    
+    if (status) {
+      query = query.eq('status', status);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error('[Chatbot] Error obteniendo citas del paciente:', error);
+      return [];
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('[Chatbot] Error obteniendo citas del paciente:', error);
+    return [];
+  }
+}
+
+// Modificar/reagendar una cita
+async function rescheduleAppointment(appointmentId, newDate, newTime, newLocation = null) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible para reagendar cita');
+      return null;
+    }
+    
+    // Obtener la cita actual
+    const { data: currentAppointment, error: fetchError } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', appointmentId)
+      .single();
+    
+    if (fetchError || !currentAppointment) {
+      console.error('[Chatbot] Cita no encontrada:', appointmentId);
+      return null;
+    }
+    
+    // Verificar que el nuevo slot esté disponible
+    const location = newLocation || currentAppointment.location;
+    const availableSlots = await getAvailableSlots(newDate, location, 1);
+    const slotKey = `${newDate}|${newTime}|${location}`;
+    const isAvailable = availableSlots.some(slot => 
+      `${slot.date}|${slot.time}|${slot.location}` === slotKey
+    );
+    
+    if (!isAvailable) {
+      console.warn(`[Chatbot] Nuevo slot no disponible: ${slotKey}`);
+      return { error: 'Nuevo slot no disponible' };
+    }
+    
+    // Liberar el slot anterior (marcar como rescheduled)
+    await supabase
+      .from('appointments')
+      .update({ status: 'rescheduled' })
+      .eq('id', appointmentId);
+    
+    // Crear nueva cita con los nuevos datos
+    const { data: newAppointment, error: createError } = await supabase
+      .from('appointments')
+      .insert({
+        patient_id: currentAppointment.patient_id,
+        phone_number: currentAppointment.phone_number,
+        appointment_date: newDate,
+        appointment_time: newTime,
+        location: location,
+        service: currentAppointment.service,
+        status: 'scheduled',
+        notes: currentAppointment.notes || `Reagendada desde ${currentAppointment.appointment_date} ${currentAppointment.appointment_time}`
+      })
+      .select()
+      .single();
+    
+    if (createError) {
+      console.error('[Chatbot] Error creando nueva cita:', createError);
+      return null;
+    }
+    
+    console.log(`[Chatbot] ✓ Cita reagendada: ${appointmentId} -> ${newAppointment.id}`);
+    return newAppointment;
+  } catch (error) {
+    console.error('[Chatbot] Error reagendando cita:', error);
+    return null;
+  }
+}
+
+// Cancelar una cita
+async function cancelAppointment(appointmentId) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible para cancelar cita');
+      return null;
+    }
+    
+    const { data, error } = await supabase
+      .from('appointments')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString()
+      })
+      .eq('id', appointmentId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('[Chatbot] Error cancelando cita:', error);
+      return null;
+    }
+    
+    console.log(`[Chatbot] ✓ Cita cancelada: ${appointmentId}`);
+    return data;
+  } catch (error) {
+    console.error('[Chatbot] Error cancelando cita:', error);
+    return null;
+  }
+}
+
 // Detectar agendamiento y extraer información del paciente en una sola llamada (optimizado)
 async function detectBookingAndExtractPatientInfo(conversationHistory, currentMessage) {
   try {
@@ -240,7 +586,7 @@ async function detectBookingAndExtractPatientInfo(conversationHistory, currentMe
     // Prompt combinado para detectar agendamiento y extraer información
     const combinedPrompt = `Analiza la siguiente conversación y:
 1. Determina si el usuario está AGENDANDO o CONFIRMANDO una cita médica
-2. Si es agendamiento, extrae la información del paciente
+2. Si es agendamiento, extrae la información del paciente Y de la cita
 
 Responde SOLO con un JSON válido en este formato exacto:
 {
@@ -249,6 +595,12 @@ Responde SOLO con un JSON válido en este formato exacto:
     "name": "nombre completo o null",
     "document": "documento o null",
     "email": "correo o null"
+  },
+  "appointmentInfo": {
+    "date": "YYYY-MM-DD o null",
+    "time": "HH:MM o null",
+    "location": "rodadero o manzanares o null",
+    "service": "servicio solicitado o null"
   }
 }
 
@@ -306,6 +658,7 @@ Usuario actual: ${currentMessage}`;
         
         const isBooking = result.isBooking === true;
         let patientInfo = null;
+        let appointmentInfo = null;
         
         if (isBooking && result.patientInfo) {
           const info = result.patientInfo;
@@ -319,8 +672,26 @@ Usuario actual: ${currentMessage}`;
           }
         }
         
-        console.log('[Chatbot] Detección/extracción:', { isBooking, patientInfo });
-        return { isBooking, patientInfo };
+        if (isBooking && result.appointmentInfo) {
+          const aptInfo = result.appointmentInfo;
+          // Validar formato de fecha (YYYY-MM-DD) y hora (HH:MM)
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          const timeRegex = /^\d{2}:\d{2}$/;
+          
+          if (aptInfo.date && dateRegex.test(aptInfo.date) || 
+              aptInfo.time && timeRegex.test(aptInfo.time) ||
+              aptInfo.location || aptInfo.service) {
+            appointmentInfo = {
+              date: aptInfo.date && aptInfo.date !== 'null' && aptInfo.date !== null ? aptInfo.date : null,
+              time: aptInfo.time && aptInfo.time !== 'null' && aptInfo.time !== null ? aptInfo.time : null,
+              location: aptInfo.location && aptInfo.location !== 'null' && aptInfo.location !== null ? aptInfo.location.toLowerCase() : null,
+              service: aptInfo.service && aptInfo.service !== 'null' && aptInfo.service !== null ? aptInfo.service : null
+            };
+          }
+        }
+        
+        console.log('[Chatbot] Detección/extracción:', { isBooking, patientInfo, appointmentInfo });
+        return { isBooking, patientInfo, appointmentInfo };
       } catch (parseError) {
         console.error('[Chatbot] Error parseando resultado:', parseError);
         return { isBooking: false, patientInfo: null };
@@ -603,9 +974,59 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     systemPrompt += '\n\nINSTRUCCIONES DE CONTEXTO:\n- Revisa el historial de la conversación para recordar información previa.\n- Si el usuario menciona algo que ya hablaron antes, haz referencia a ello de manera natural.\n- Mantén la coherencia con mensajes anteriores.\n- Si el usuario pregunta algo que ya respondiste, puedes hacer referencia a la respuesta anterior de forma breve.';
   }
   
+  // Agregar instrucciones sobre gestión de citas
+  systemPrompt += '\n\nGESTIÓN DE CITAS:\n- Cuando el usuario pregunte por disponibilidad o quiera agendar, usa la información de disponibilidad que se te proporciona.\n- Si se te proporciona información de slots disponibles, muéstrala de forma clara y organizada.\n- Para confirmar una cita, necesitas: fecha (YYYY-MM-DD), hora (HH:MM), ubicación (rodadero o manzanares), y opcionalmente el servicio.\n- Si el usuario quiere modificar o cancelar una cita, primero consulta sus citas existentes.\n- Siempre confirma los detalles de la cita antes de reservarla.';
+  
+  // Detectar si el usuario pregunta por disponibilidad o citas
+  const appointmentKeywords = ['disponibilidad', 'disponible', 'cita', 'agendar', 'horario', 'fecha', 'cuando puedo', 'cuando hay', 'agenda'];
+  const isAskingForAvailability = appointmentKeywords.some(keyword => 
+    userMessage.toLowerCase().includes(keyword)
+  );
+  
+  // Si pregunta por disponibilidad, consultar slots disponibles
+  let availabilityInfo = '';
+  if (isAskingForAvailability) {
+    console.log('[Chatbot] Usuario pregunta por disponibilidad, consultando slots...');
+    const today = new Date();
+    const availableSlots = await getAvailableSlots(today.toISOString().split('T')[0], null, 7);
+    
+    if (availableSlots.length > 0) {
+      // Agrupar por fecha y ubicación
+      const slotsByDate = {};
+      availableSlots.forEach(slot => {
+        const dateKey = slot.date;
+        if (!slotsByDate[dateKey]) {
+          slotsByDate[dateKey] = { rodadero: [], manzanares: [] };
+        }
+        slotsByDate[dateKey][slot.location].push(slot.time);
+      });
+      
+      // Formatear información de disponibilidad
+      const availabilityLines = ['\n\nDISPONIBILIDAD DE CITAS (próximos 7 días):'];
+      Object.keys(slotsByDate).sort().forEach(date => {
+        const dateObj = new Date(date);
+        const dateStr = dateObj.toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        availabilityLines.push(`\n${dateStr}:`);
+        
+        if (slotsByDate[date].rodadero.length > 0) {
+          availabilityLines.push(`  Rodadero: ${slotsByDate[date].rodadero.slice(0, 5).join(', ')}${slotsByDate[date].rodadero.length > 5 ? ` (+${slotsByDate[date].rodadero.length - 5} más)` : ''}`);
+        }
+        if (slotsByDate[date].manzanares.length > 0) {
+          availabilityLines.push(`  Manzanares: ${slotsByDate[date].manzanares.slice(0, 5).join(', ')}${slotsByDate[date].manzanares.length > 5 ? ` (+${slotsByDate[date].manzanares.length - 5} más)` : ''}`);
+        }
+      });
+      
+      availabilityInfo = availabilityLines.join('\n');
+      console.log(`[Chatbot] Disponibilidad consultada: ${availableSlots.length} slots disponibles`);
+    } else {
+      availabilityInfo = '\n\nDISPONIBILIDAD: No hay slots disponibles en los próximos 7 días.';
+      console.log('[Chatbot] No hay slots disponibles');
+    }
+  }
+  
   // Construir mensajes con contexto
   const messages = [
-    { role: 'system', content: systemPrompt }
+    { role: 'system', content: systemPrompt + availabilityInfo }
   ];
   
   // Solo agregar historial si existe (evitar arrays vacíos)
@@ -681,7 +1102,7 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
         ];
         
         // Detectar agendamiento y extraer información en una sola llamada (optimizado)
-        const { isBooking, patientInfo } = await detectBookingAndExtractPatientInfo(
+        const { isBooking, patientInfo, appointmentInfo } = await detectBookingAndExtractPatientInfo(
           fullHistoryWithCurrent.slice(0, -2), // Sin los últimos 2 mensajes (user y assistant actuales)
           userMessage
         );
@@ -711,6 +1132,28 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
             }
           } else {
             console.log(`[Chatbot] Paciente ya existe con información completa: ${phoneNumber}`);
+          }
+          
+          // Crear cita si hay información completa de la cita
+          if (appointmentInfo && appointmentInfo.date && appointmentInfo.time) {
+            const location = appointmentInfo.location || 'rodadero'; // Default a rodadero
+            const appointment = await createAppointment(phoneNumber, {
+              date: appointmentInfo.date,
+              time: appointmentInfo.time,
+              location: location,
+              service: appointmentInfo.service || null,
+              notes: null
+            });
+            
+            if (appointment && !appointment.error) {
+              console.log(`[Chatbot] ✓ Cita creada automáticamente: ${appointmentInfo.date} ${appointmentInfo.time} en ${location}`);
+            } else if (appointment && appointment.error) {
+              console.warn(`[Chatbot] ⚠ No se pudo crear cita: ${appointment.error}`);
+            } else {
+              console.warn(`[Chatbot] ⚠ No se pudo crear cita (error desconocido)`);
+            }
+          } else {
+            console.log(`[Chatbot] Información de cita incompleta, no se crea automáticamente`);
           }
         }
       } catch (workflowError) {
