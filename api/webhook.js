@@ -931,6 +931,11 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
   const isNewConversation = history.length === 0;
   console.log(`[Chatbot] Historial recuperado: ${history.length} mensajes ${isNewConversation ? '(conversación nueva)' : '(conversación existente)'}`);
   
+  // Verificar si el paciente ya está registrado (REGLA PRINCIPAL)
+  const existingPatient = await getPatientByPhone(phoneNumber);
+  const isPatientRegistered = existingPatient && existingPatient.name;
+  console.log(`[Chatbot] Paciente registrado: ${isPatientRegistered ? `Sí (${existingPatient.name})` : 'No'}`);
+  
   // Obtener configuración de IA
   const config = await getAIConfig();
   console.log(`[Chatbot] Configuración de IA obtenida: ${config ? 'Sí' : 'No'}`);
@@ -1051,10 +1056,17 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     systemPrompt = promptParts.join('\n');
   }
   
-  // Agregar instrucciones sobre el contexto y saludos
-  if (isNewConversation) {
-    systemPrompt += '\n\nINSTRUCCIONES PARA SALUDOS INICIALES:\n- Si el usuario te saluda (hola, buenos días, etc.), responde de manera cálida y natural, presentándote brevemente como el asistente de la clínica.\n- Menciona que estás disponible para ayudar con información sobre servicios, citas, horarios, etc.\n- Usa emojis apropiados (😊, 💎, 🌿) para mantener un tono amigable.\n- Sé conciso pero acogedor.';
+  // REGLA PRINCIPAL Y GLOBAL: Atención personalizada al inicio
+  if (isPatientRegistered) {
+    // Paciente ya registrado: saludar por nombre y confirmar datos
+    systemPrompt += `\n\nREGLA PRINCIPAL - PACIENTE REGISTRADO:\n- El número ${phoneNumber} está asociado al paciente: ${existingPatient.name}\n- SIEMPRE saluda al paciente por su nombre: "¡Hola ${existingPatient.name}! 😊"\n- Confirma rápidamente sus datos: "Veo que ya tienes una cuenta con nosotros. ¿Tus datos siguen siendo correctos?"\n- Si el paciente confirma, continúa con su solicitud normalmente.\n- Si necesita actualizar datos, pídelos de forma amigable.\n- Mantén un tono cálido y personalizado en toda la conversación.`;
   } else {
+    // Paciente no registrado: proceso de registro
+    systemPrompt += `\n\nREGLA PRINCIPAL - NUEVO PACIENTE (OBLIGATORIA):\n- Este es un número nuevo que NO está registrado en nuestra base de datos.\n- PASO 1: Al saludar, pregunta SIEMPRE el nombre completo del cliente de forma amigable.\n  Ejemplo: "¡Hola! 😊 Para brindarte un mejor servicio, ¿podrías decirme tu nombre completo?"\n- PASO 2: Una vez que tengas el nombre, GUÁRDALO en la base de datos.\n- PASO 3: Dependiendo de lo que el cliente solicite (agendar cita, consultar servicios, etc.), explícale que para proceder necesitas:\n  • Documento de identidad (cédula, pasaporte, etc.)\n  • Número de teléfono (aunque ya lo tengas, confírmalo)\n  • Correo electrónico\n- PASO 4: Solicita estos datos de forma amigable y profesional.\n- IMPORTANTE: Esta regla se aplica en TODAS las conversaciones nuevas. NO procedas con ninguna solicitud hasta tener al menos el nombre guardado.\n- Si el cliente solo quiere información general (horarios, servicios), puedes proporcionarla, pero si quiere agendar o hacer alguna gestión, DEBES pedir los datos primero.\n- Mantén un tono cálido, empático y profesional usando emojis apropiados (😊, 💎, 🌿).`;
+  }
+  
+  // Agregar instrucciones sobre el contexto
+  if (!isNewConversation) {
     systemPrompt += '\n\nINSTRUCCIONES DE CONTEXTO:\n- Revisa el historial de la conversación para recordar información previa.\n- Si el usuario menciona algo que ya hablaron antes, haz referencia a ello de manera natural.\n- Mantén la coherencia con mensajes anteriores.\n- Si el usuario pregunta algo que ya respondiste, puedes hacer referencia a la respuesta anterior de forma breve.';
   }
   
@@ -1174,7 +1186,7 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     
     console.log(`[Chatbot] Mensajes guardados en base de datos para ${phoneNumber}`);
     
-    // WORKFLOW: Detectar agendamiento de cita y crear/actualizar paciente (optimizado)
+    // WORKFLOW: Detectar y guardar nombre del paciente (si es nuevo) + Detectar agendamiento
     // Ejecutar de forma asíncrona para no bloquear la respuesta (fire and forget)
     (async () => {
       try {
@@ -1186,7 +1198,64 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
           { role: 'assistant', content: aiMessage }
         ];
         
-        // Detectar agendamiento y extraer información en una sola llamada (optimizado)
+        // WORKFLOW 1: Si el paciente no está registrado, intentar extraer y guardar el nombre
+        if (!isPatientRegistered) {
+          console.log(`[Chatbot] Paciente no registrado, intentando extraer nombre...`);
+          
+          // Detectar si el usuario proporcionó su nombre
+          const nameKeywords = ['me llamo', 'mi nombre es', 'soy', 'me nombre', 'nombre completo'];
+          const mightBeProvidingName = nameKeywords.some(keyword => 
+            userMessage.toLowerCase().includes(keyword)
+          ) || (userMessage.split(' ').length <= 4 && !userMessage.includes('?') && !userMessage.includes('¿'));
+          
+          if (mightBeProvidingName) {
+            // Intentar extraer el nombre usando IA
+            const apiKey = process.env.OPENAI_API_KEY;
+            if (apiKey) {
+              try {
+                const nameExtractionPrompt = `Extrae el nombre completo de la siguiente frase. Responde SOLO con el nombre completo o "null" si no hay nombre claro.
+
+Frase: "${userMessage}"
+
+Responde solo con el nombre o "null":`;
+
+                const nameResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                  },
+                  body: JSON.stringify({
+                    model: 'gpt-3.5-turbo',
+                    messages: [
+                      { role: 'system', content: nameExtractionPrompt },
+                      { role: 'user', content: 'Extrae el nombre.' }
+                    ],
+                    max_tokens: 50,
+                    temperature: 0.1
+                  })
+                });
+
+                if (nameResponse.ok) {
+                  const nameData = await nameResponse.json();
+                  const extractedName = nameData.choices?.[0]?.message?.content?.trim();
+                  
+                  if (extractedName && extractedName.toLowerCase() !== 'null' && extractedName.length > 2) {
+                    // Guardar solo el nombre por ahora
+                    const patient = await createOrUpdatePatient(phoneNumber, { name: extractedName });
+                    if (patient) {
+                      console.log(`[Chatbot] ✓ Nombre guardado automáticamente: ${extractedName} para ${phoneNumber}`);
+                    }
+                  }
+                }
+              } catch (nameError) {
+                console.error('[Chatbot] Error extrayendo nombre:', nameError);
+              }
+            }
+          }
+        }
+        
+        // WORKFLOW 2: Detectar agendamiento y extraer información en una sola llamada (optimizado)
         const { isBooking, patientInfo, appointmentInfo } = await detectBookingAndExtractPatientInfo(
           fullHistoryWithCurrent.slice(0, -2), // Sin los últimos 2 mensajes (user y assistant actuales)
           userMessage
