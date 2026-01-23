@@ -168,38 +168,40 @@ export default async function handler(req, res) {
     
     // Función para obtener fecha en formato YYYY-MM-DD desde una fecha de la BD
     function getDateStringFromDB(dateValue) {
-      if (!dateValue) return '';
-      
-      // Si ya es una cadena YYYY-MM-DD, devolverla directamente
-      if (typeof dateValue === 'string') {
-        // Extraer solo la parte de la fecha si viene con hora (YYYY-MM-DD HH:MM:SS)
-        const dateMatch = dateValue.match(/^(\d{4}-\d{2}-\d{2})/);
-        if (dateMatch) {
-          return dateMatch[1]; // Devolver solo YYYY-MM-DD
-        }
-        // Si ya es YYYY-MM-DD, devolverla
-        if (dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          return dateValue;
-        }
+      if (!dateValue) {
+        return '';
       }
       
-      // Si es un objeto Date, extraer año, mes, día usando métodos locales (no UTC)
-      // porque las fechas de la BD son solo fechas sin hora, no necesitan conversión UTC
-      if (dateValue instanceof Date) {
+      // Convertir a string primero para manejar todos los casos
+      let dateStr = '';
+      
+      if (typeof dateValue === 'string') {
+        dateStr = dateValue;
+      } else if (dateValue instanceof Date) {
+        // Para objetos Date, usar métodos locales (no UTC) porque son fechas sin hora
         const year = dateValue.getFullYear();
         const month = String(dateValue.getMonth() + 1).padStart(2, '0');
         const day = String(dateValue.getDate()).padStart(2, '0');
         return year + '-' + month + '-' + day;
-      }
-      
-      // Si es un objeto con propiedades de fecha
-      if (dateValue && typeof dateValue === 'object') {
+      } else if (dateValue && typeof dateValue === 'object') {
+        // Si es un objeto con propiedades de fecha
         if (dateValue.year && dateValue.month && dateValue.day) {
           const year = String(dateValue.year).padStart(4, '0');
           const month = String(dateValue.month).padStart(2, '0');
           const day = String(dateValue.day).padStart(2, '0');
           return year + '-' + month + '-' + day;
         }
+        // Intentar convertir a string
+        dateStr = String(dateValue);
+      } else {
+        dateStr = String(dateValue);
+      }
+      
+      // Extraer solo la parte de la fecha (YYYY-MM-DD) de cualquier formato
+      // Maneja: "2026-01-23", "2026-01-23T00:00:00", "2026-01-23 14:00:00", etc.
+      const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (dateMatch) {
+        return dateMatch[1]; // Devolver solo YYYY-MM-DD
       }
       
       return '';
