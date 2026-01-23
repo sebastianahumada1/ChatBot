@@ -193,45 +193,44 @@ export default async function handler(req, res) {
       return toColombiaDate(dateString);
     }
     
-    // Función para obtener fecha en formato YYYY-MM-DD desde una fecha de la BD
+    // Función simplificada para obtener fecha en formato YYYY-MM-DD desde la BD
     function getDateStringFromDB(dateValue) {
-      if (!dateValue) {
-        return '';
-      }
+      if (!dateValue) return '';
       
-      // Convertir a string primero para manejar todos los casos
-      let dateStr = '';
-      
-      if (typeof dateValue === 'string') {
-        dateStr = dateValue;
-      } else if (dateValue instanceof Date) {
-        // Para objetos Date, usar métodos locales (no UTC) porque son fechas sin hora
-        const year = dateValue.getFullYear();
-        const month = String(dateValue.getMonth() + 1).padStart(2, '0');
-        const day = String(dateValue.getDate()).padStart(2, '0');
-        return year + '-' + month + '-' + day;
-      } else if (dateValue && typeof dateValue === 'object') {
-        // Si es un objeto con propiedades de fecha
-        if (dateValue.year && dateValue.month && dateValue.day) {
-          const year = String(dateValue.year).padStart(4, '0');
-          const month = String(dateValue.month).padStart(2, '0');
-          const day = String(dateValue.day).padStart(2, '0');
+      try {
+        // Si es string, extraer YYYY-MM-DD directamente
+        if (typeof dateValue === 'string') {
+          const match = dateValue.match(/^(\d{4}-\d{2}-\d{2})/);
+          if (match) return match[1];
+          return dateValue; // Si no hay match, devolver tal cual
+        }
+        
+        // Si es Date, extraer componentes locales
+        if (dateValue instanceof Date) {
+          const year = dateValue.getFullYear();
+          const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+          const day = String(dateValue.getDate()).padStart(2, '0');
           return year + '-' + month + '-' + day;
         }
-        // Intentar convertir a string
-        dateStr = String(dateValue);
-      } else {
-        dateStr = String(dateValue);
+        
+        // Si es objeto con propiedades, construir string
+        if (dateValue && typeof dateValue === 'object') {
+          if (dateValue.year !== undefined && dateValue.month !== undefined && dateValue.day !== undefined) {
+            const year = String(dateValue.year).padStart(4, '0');
+            const month = String(dateValue.month).padStart(2, '0');
+            const day = String(dateValue.day).padStart(2, '0');
+            return year + '-' + month + '-' + day;
+          }
+        }
+        
+        // Último recurso: convertir a string y extraer fecha
+        const str = String(dateValue);
+        const match = str.match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : '';
+      } catch (error) {
+        console.error('[getDateStringFromDB] Error parseando fecha:', dateValue, error);
+        return '';
       }
-      
-      // Extraer solo la parte de la fecha (YYYY-MM-DD) de cualquier formato
-      // Maneja: "2026-01-23", "2026-01-23T00:00:00", "2026-01-23 14:00:00", etc.
-      const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
-      if (dateMatch) {
-        return dateMatch[1]; // Devolver solo YYYY-MM-DD
-      }
-      
-      return '';
     }
     
     // Función para formatear fecha en formato Colombia
@@ -373,14 +372,15 @@ export default async function handler(req, res) {
         const data = await response.json();
         appointments = data.appointments || [];
         
-        // Debug: mostrar todas las citas cargadas
-        console.log('[DEBUG] Citas cargadas:', appointments.map(apt => ({
-          appointment_date: apt.appointment_date,
-          tipo: typeof apt.appointment_date,
-          parsed: getDateStringFromDB(apt.appointment_date),
-          time: apt.appointment_time,
-          raw: JSON.stringify(apt.appointment_date)
-        })));
+        // Debug: mostrar resumen de citas cargadas
+        console.log('[Calendario] Citas cargadas:', appointments.length, 'citas');
+        if (appointments.length > 0) {
+          console.log('[Calendario] Ejemplo de fecha parseada:', {
+            original: appointments[0].appointment_date,
+            parsed: getDateStringFromDB(appointments[0].appointment_date),
+            time: appointments[0].appointment_time
+          });
+        }
         if (currentView === 'day') {
           renderDayView();
         } else if (currentView === 'week') {
@@ -493,11 +493,7 @@ export default async function handler(req, res) {
           const dayStr = getColombiaDateString(day);
           const dayAppointments = appointments.filter(apt => {
             const aptDateStr = getDateStringFromDB(apt.appointment_date);
-            const matches = aptDateStr === dayStr;
-            if (matches) {
-              console.log('[DEBUG Semana] ✓ Cita encontrada para', dayStr, '- BD:', apt.appointment_date, 'Parseado:', aptDateStr);
-            }
-            return matches;
+            return aptDateStr === dayStr;
           });
         
         let dayHtml = '<div class="relative border-l border-[#f0f2f4]">' +
@@ -591,12 +587,7 @@ export default async function handler(req, res) {
         const dayStr = day.dateString || getColombiaDateString(day.fullDate);
         const dayAppointments = appointments.filter(apt => {
           const aptDateStr = getDateStringFromDB(apt.appointment_date);
-          const matches = aptDateStr === dayStr;
-          // Debug solo para citas relevantes
-          if (aptDateStr && matches) {
-            console.log('[DEBUG Mes] ✓ Cita encontrada para', dayStr, '- BD:', apt.appointment_date, 'Parseado:', aptDateStr);
-          }
-          return matches;
+          return aptDateStr === dayStr;
         });
         
         const today = getColombiaDate();
