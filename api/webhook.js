@@ -634,10 +634,13 @@ async function detectBookingAndExtractPatientInfo(conversationHistory, currentMe
       return { isBooking: false, patientInfo: null };
     }
     
-    // Prompt combinado para detectar agendamiento y extraer información
+    // Prompt combinado para detectar CONFIRMACIÓN explícita y extraer información
     const combinedPrompt = `Analiza la siguiente conversación y:
-1. Determina si el usuario está AGENDANDO o CONFIRMANDO una cita médica
-2. Si es agendamiento, extrae la información del paciente Y de la cita
+1. Determina si el usuario está CONFIRMANDO EXPLÍCITAMENTE una cita médica (NO solo expresando intención)
+2. Si es confirmación, extrae la información del paciente Y de la cita
+
+IMPORTANTE: Solo marca "isBooking": true si el usuario CONFIRMA EXPLÍCITAMENTE (dice "sí", "confirmo", "acepto", "correcto", "está bien", "de acuerdo", etc.)
+NO marques true si solo está preguntando, consultando o expresando intención sin confirmar.
 
 Responde SOLO con un JSON válido en este formato exacto:
 {
@@ -648,18 +651,23 @@ Responde SOLO con un JSON válido en este formato exacto:
     "email": "correo o null"
   },
   "appointmentInfo": {
-    "date": "YYYY-MM-DD o null",
+    "date": "YYYY-MM-DD o null (SIEMPRE con año completo, si no tiene año asume 2026)",
     "time": "HH:MM o null",
     "location": "rodadero o manzanares o null",
     "service": "servicio solicitado o null"
   }
 }
 
-Indicadores de agendamiento:
-- El usuario confirma una fecha y hora para una cita
-- El usuario acepta una propuesta de cita
-- El usuario confirma que quiere agendar
-- El usuario proporciona información para agendar (nombre, documento, etc.)
+Indicadores de CONFIRMACIÓN (isBooking: true):
+- El usuario dice "sí", "confirmo", "acepto", "correcto", "está bien", "de acuerdo", "perfecto"
+- El usuario confirma explícitamente después de ver un resumen de cita
+- El usuario dice "agenda" o "reserva" después de proporcionar todos los datos
+
+NO es confirmación (isBooking: false):
+- El usuario solo pregunta por disponibilidad
+- El usuario proporciona datos pero no confirma
+- El usuario dice "quiero agendar" sin confirmar explícitamente
+- El bot muestra un resumen pero el usuario no ha confirmado aún
 
 Conversación:
 ${conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
@@ -727,13 +735,38 @@ Usuario actual: ${currentMessage}`;
           const aptInfo = result.appointmentInfo;
           // Validar formato de fecha (YYYY-MM-DD) y hora (HH:MM)
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          const dateRegexShort = /^\d{2}-\d{2}$/; // MM-DD sin año
           const timeRegex = /^\d{2}:\d{2}$/;
           
-          if (aptInfo.date && dateRegex.test(aptInfo.date) || 
-              aptInfo.time && timeRegex.test(aptInfo.time) ||
+          let normalizedDate = null;
+          if (aptInfo.date && aptInfo.date !== 'null' && aptInfo.date !== null) {
+            // Si la fecha tiene año completo
+            if (dateRegex.test(aptInfo.date)) {
+              normalizedDate = aptInfo.date;
+            } 
+            // Si la fecha no tiene año, agregar 2026
+            else if (dateRegexShort.test(aptInfo.date)) {
+              normalizedDate = `2026-${aptInfo.date}`;
+              console.log(`[Chatbot] Fecha sin año detectada, agregando 2026: ${aptInfo.date} -> ${normalizedDate}`);
+            }
+            // Intentar parsear otros formatos comunes
+            else {
+              // Intentar formatos como "25/01" o "25-01"
+              const altMatch = aptInfo.date.match(/(\d{1,2})[\/\-](\d{1,2})/);
+              if (altMatch) {
+                const month = altMatch[2].padStart(2, '0');
+                const day = altMatch[1].padStart(2, '0');
+                normalizedDate = `2026-${month}-${day}`;
+                console.log(`[Chatbot] Fecha parseada y año agregado: ${aptInfo.date} -> ${normalizedDate}`);
+              }
+            }
+          }
+          
+          if (normalizedDate || 
+              (aptInfo.time && timeRegex.test(aptInfo.time)) ||
               aptInfo.location || aptInfo.service) {
             appointmentInfo = {
-              date: aptInfo.date && aptInfo.date !== 'null' && aptInfo.date !== null ? aptInfo.date : null,
+              date: normalizedDate,
               time: aptInfo.time && aptInfo.time !== 'null' && aptInfo.time !== null ? aptInfo.time : null,
               location: aptInfo.location && aptInfo.location !== 'null' && aptInfo.location !== null ? aptInfo.location.toLowerCase() : null,
               service: aptInfo.service && aptInfo.service !== 'null' && aptInfo.service !== null ? aptInfo.service : null
@@ -1026,7 +1059,8 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
   }
   
   // Agregar instrucciones sobre gestión de citas
-  systemPrompt += '\n\nGESTIÓN DE CITAS:\n- Cuando el usuario pregunte por disponibilidad o quiera agendar, usa la información de disponibilidad que se te proporciona.\n- Si se te proporciona información de slots disponibles, muéstrala de forma clara y organizada.\n- Para confirmar una cita, necesitas: fecha (YYYY-MM-DD), hora (HH:MM), ubicación (rodadero o manzanares), y opcionalmente el servicio.\n- Si el usuario quiere modificar o cancelar una cita, primero consulta sus citas existentes.\n- Siempre confirma los detalles de la cita antes de reservarla.';
+  const currentYear = 2026; // Año base para agendamiento
+  systemPrompt += `\n\nGESTIÓN DE CITAS (AÑO BASE: ${currentYear}):\n- IMPORTANTE: Todas las fechas deben incluir el año completo (formato: YYYY-MM-DD). El año actual es ${currentYear}.\n- Cuando el usuario pregunte por disponibilidad o quiera agendar, usa la información de disponibilidad que se te proporciona.\n- Si se te proporciona información de slots disponibles, muéstrala de forma clara y organizada.\n- FLUJO DE AGENDAMIENTO:\n  1. Cuando el usuario quiera agendar, primero recopila: fecha completa con año (${currentYear}-MM-DD), hora (HH:MM), ubicación (rodadero o manzanares), y opcionalmente el servicio.\n  2. MUY IMPORTANTE: Antes de confirmar, muestra un RESUMEN de la cita con todos los detalles y SOLICITA CONFIRMACIÓN explícita del usuario.\n  3. Ejemplo de resumen: "Resumen de tu cita:\n   📅 Fecha: [fecha completa con año]\n   🕐 Hora: [hora]\n   📍 Sede: [ubicación]\n   🦷 Servicio: [servicio si aplica]\n   ¿Confirmas esta cita? Responde 'sí', 'confirmo' o 'acepto' para agendar."\n  4. SOLO cuando el usuario confirme explícitamente (diciendo "sí", "confirmo", "acepto", "correcto", etc.), entonces la cita quedará agendada.\n  5. Si el usuario no confirma o dice "no", no agendes la cita.\n- Si el usuario quiere modificar o cancelar una cita, primero consulta sus citas existentes.\n- NUNCA agendes una cita sin mostrar primero el resumen y obtener confirmación del usuario.`;
   
   // Detectar si el usuario pregunta por disponibilidad o citas
   const appointmentKeywords = ['disponibilidad', 'disponible', 'cita', 'agendar', 'horario', 'fecha', 'cuando puedo', 'cuando hay', 'agenda'];
@@ -1159,7 +1193,8 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
         );
         
         if (isBooking) {
-          console.log(`[Chatbot] 🎯 Agendamiento detectado para ${phoneNumber}`);
+          console.log(`[Chatbot] 🎯 CONFIRMACIÓN de agendamiento detectada para ${phoneNumber}`);
+          console.log(`[Chatbot] Información extraída:`, { patientInfo, appointmentInfo });
           
           // Verificar si el paciente ya existe
           const existingPatient = await getPatientByPhone(phoneNumber);
@@ -1185,27 +1220,37 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
             console.log(`[Chatbot] Paciente ya existe con información completa: ${phoneNumber}`);
           }
           
-          // Crear cita si hay información completa de la cita
+          // Crear cita SOLO si hay información completa y el usuario confirmó explícitamente
           if (appointmentInfo && appointmentInfo.date && appointmentInfo.time) {
-            const location = appointmentInfo.location || 'rodadero'; // Default a rodadero
-            const appointment = await createAppointment(phoneNumber, {
-              date: appointmentInfo.date,
-              time: appointmentInfo.time,
-              location: location,
-              service: appointmentInfo.service || null,
-              notes: null
-            });
-            
-            if (appointment && !appointment.error) {
-              console.log(`[Chatbot] ✓ Cita creada automáticamente: ${appointmentInfo.date} ${appointmentInfo.time} en ${location}`);
-            } else if (appointment && appointment.error) {
-              console.warn(`[Chatbot] ⚠ No se pudo crear cita: ${appointment.error}`);
+            // Validar formato de fecha (debe tener año)
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(appointmentInfo.date)) {
+              console.warn(`[Chatbot] ⚠ Fecha inválida o sin año: ${appointmentInfo.date}`);
             } else {
-              console.warn(`[Chatbot] ⚠ No se pudo crear cita (error desconocido)`);
+              const location = appointmentInfo.location || 'rodadero'; // Default a rodadero
+              console.log(`[Chatbot] Creando cita: ${appointmentInfo.date} ${appointmentInfo.time} en ${location}`);
+              
+              const appointment = await createAppointment(phoneNumber, {
+                date: appointmentInfo.date,
+                time: appointmentInfo.time,
+                location: location,
+                service: appointmentInfo.service || null,
+                notes: null
+              });
+              
+              if (appointment && !appointment.error) {
+                console.log(`[Chatbot] ✓✓✓ CITA CREADA EXITOSAMENTE: ${appointmentInfo.date} ${appointmentInfo.time} en ${location} (ID: ${appointment.id})`);
+              } else if (appointment && appointment.error) {
+                console.warn(`[Chatbot] ⚠ No se pudo crear cita: ${appointment.error}`);
+              } else {
+                console.warn(`[Chatbot] ⚠ No se pudo crear cita (error desconocido)`);
+              }
             }
           } else {
-            console.log(`[Chatbot] Información de cita incompleta, no se crea automáticamente`);
+            console.log(`[Chatbot] Información de cita incompleta (fecha: ${appointmentInfo?.date}, hora: ${appointmentInfo?.time}), no se crea automáticamente`);
           }
+        } else {
+          console.log(`[Chatbot] No se detectó confirmación explícita de agendamiento`);
         }
       } catch (workflowError) {
         // No fallar la respuesta si el workflow tiene un error
