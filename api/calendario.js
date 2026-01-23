@@ -285,6 +285,10 @@ export default async function handler(req, res) {
         if (searchInput) searchInput.addEventListener('input', filterAppointments);
       }
 
+      // Exponer funciones al scope global para los onclick inline
+      window.changeView = changeView;
+      window.goToToday = goToToday;
+      
       // Inicializar cuando el DOM esté listo
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initializeCalendar);
@@ -297,12 +301,22 @@ export default async function handler(req, res) {
       currentView = view;
       
       // Actualizar botones
-      document.getElementById('viewMonth').classList.toggle('bg-white', view === 'month');
-      document.getElementById('viewMonth').classList.toggle('shadow-sm', view === 'month');
-      document.getElementById('viewWeek').classList.toggle('bg-white', view === 'week');
-      document.getElementById('viewWeek').classList.toggle('shadow-sm', view === 'week');
-      document.getElementById('viewDay').classList.toggle('bg-white', view === 'day');
-      document.getElementById('viewDay').classList.toggle('shadow-sm', view === 'day');
+      const monthBtn = document.getElementById('viewMonth');
+      const weekBtn = document.getElementById('viewWeek');
+      const dayBtn = document.getElementById('viewDay');
+      
+      if (monthBtn) {
+        monthBtn.classList.toggle('bg-white', view === 'month');
+        monthBtn.classList.toggle('shadow-sm', view === 'month');
+      }
+      if (weekBtn) {
+        weekBtn.classList.toggle('bg-white', view === 'week');
+        weekBtn.classList.toggle('shadow-sm', view === 'week');
+      }
+      if (dayBtn) {
+        dayBtn.classList.toggle('bg-white', view === 'day');
+        dayBtn.classList.toggle('shadow-sm', view === 'day');
+      }
       
       // Ocultar todas las vistas
       document.getElementById('dayView').classList.add('hidden');
