@@ -374,12 +374,23 @@ export default async function handler(req, res) {
         
         // Debug: mostrar resumen de citas cargadas
         console.log('[Calendario] Citas cargadas:', appointments.length, 'citas');
-        if (appointments.length > 0) {
-          console.log('[Calendario] Ejemplo de fecha parseada:', {
-            original: appointments[0].appointment_date,
-            parsed: getDateStringFromDB(appointments[0].appointment_date),
-            time: appointments[0].appointment_time
-          });
+        console.log('[Calendario] Rango consultado:', startDateStr, 'a', endDateStr);
+        
+        // Buscar específicamente la cita del 23 de enero
+        const jan23Appointments = appointments.filter(apt => {
+          const aptDateStr = getDateStringFromDB(apt.appointment_date);
+          return aptDateStr === '2026-01-23' || String(apt.appointment_date).includes('2026-01-23');
+        });
+        
+        if (jan23Appointments.length > 0) {
+          console.log('[Calendario] ✓ Citas encontradas para 2026-01-23:', jan23Appointments.map(apt => ({
+            original: apt.appointment_date,
+            parsed: getDateStringFromDB(apt.appointment_date),
+            time: apt.appointment_time
+          })));
+        } else {
+          console.log('[Calendario] ⚠ No se encontraron citas para 2026-01-23 en el rango', startDateStr, 'a', endDateStr);
+          console.log('[Calendario] Todas las fechas parseadas:', appointments.map(apt => getDateStringFromDB(apt.appointment_date)));
         }
         if (currentView === 'day') {
           renderDayView();
