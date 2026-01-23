@@ -183,11 +183,12 @@ export default async function handler(req, res) {
         }
       }
       
-      // Si es un objeto Date, extraer año, mes, día usando UTC para evitar problemas de zona horaria
+      // Si es un objeto Date, extraer año, mes, día usando métodos locales (no UTC)
+      // porque las fechas de la BD son solo fechas sin hora, no necesitan conversión UTC
       if (dateValue instanceof Date) {
-        const year = dateValue.getUTCFullYear();
-        const month = String(dateValue.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(dateValue.getUTCDate()).padStart(2, '0');
+        const year = dateValue.getFullYear();
+        const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+        const day = String(dateValue.getDate()).padStart(2, '0');
         return year + '-' + month + '-' + day;
       }
       
