@@ -31,6 +31,23 @@ CREATE TABLE IF NOT EXISTS ai_config (
 -- Índice para búsquedas por clave
 CREATE INDEX IF NOT EXISTS idx_ai_config_key ON ai_config(key);
 
+-- Tabla: patients
+-- Almacena información de los pacientes
+CREATE TABLE IF NOT EXISTS patients (
+  id BIGSERIAL PRIMARY KEY,
+  phone_number TEXT UNIQUE NOT NULL,
+  name TEXT,
+  document TEXT,
+  email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Índices para optimizar consultas de pacientes
+CREATE INDEX IF NOT EXISTS idx_patients_phone_number ON patients(phone_number);
+CREATE INDEX IF NOT EXISTS idx_patients_document ON patients(document);
+CREATE INDEX IF NOT EXISTS idx_patients_email ON patients(email);
+
 -- Configuración por defecto
 INSERT INTO ai_config (key, value, description) VALUES
 ('system_prompt', '{"text": "Eres un asistente breve y útil para una clínica odontológica. Recuerdas el contexto de conversaciones anteriores y mantienes un tono profesional y amigable."}', 'Prompt principal del sistema'),

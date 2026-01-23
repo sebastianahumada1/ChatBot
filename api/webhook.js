@@ -126,6 +126,245 @@ async function getAIConfig() {
   }
 }
 
+// Verificar si un paciente existe por número de teléfono
+async function getPatientByPhone(phoneNumber) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible, no se puede verificar paciente');
+      return null;
+    }
+    
+    const { data, error } = await supabase
+      .from('patients')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No se encontró el paciente
+        return null;
+      }
+      console.error('[Chatbot] Error obteniendo paciente:', error);
+      return null;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('[Chatbot] Error obteniendo paciente:', error);
+    return null;
+  }
+}
+
+// Crear o actualizar un paciente
+async function createOrUpdatePatient(phoneNumber, patientData) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('[Chatbot] Supabase no disponible, no se puede crear/actualizar paciente');
+      return null;
+    }
+    
+    const { name, document, email } = patientData;
+    
+    // Verificar si el paciente ya existe
+    const existingPatient = await getPatientByPhone(phoneNumber);
+    
+    if (existingPatient) {
+      // Actualizar paciente existente solo con datos nuevos
+      const updateData = {
+        updated_at: new Date().toISOString()
+      };
+      
+      if (name && !existingPatient.name) updateData.name = name;
+      if (document && !existingPatient.document) updateData.document = document;
+      if (email && !existingPatient.email) updateData.email = email;
+      
+      // Solo actualizar si hay datos nuevos
+      if (Object.keys(updateData).length > 1) {
+        const { data, error } = await supabase
+          .from('patients')
+          .update(updateData)
+          .eq('phone_number', phoneNumber)
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('[Chatbot] Error actualizando paciente:', error);
+          return null;
+        }
+        
+        console.log(`[Chatbot] ✓ Paciente actualizado: ${phoneNumber}`);
+        return data;
+      } else {
+        console.log(`[Chatbot] Paciente ya existe y tiene todos los datos: ${phoneNumber}`);
+        return existingPatient;
+      }
+    } else {
+      // Crear nuevo paciente
+      const { data, error } = await supabase
+        .from('patients')
+        .insert({
+          phone_number: phoneNumber,
+          name: name || null,
+          document: document || null,
+          email: email || null
+        })
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('[Chatbot] Error creando paciente:', error);
+        return null;
+      }
+      
+      console.log(`[Chatbot] ✓ Paciente creado: ${phoneNumber}`);
+      return data;
+    }
+  } catch (error) {
+    console.error('[Chatbot] Error creando/actualizando paciente:', error);
+    return null;
+  }
+}
+
+// Extraer información del paciente de la conversación usando IA
+async function extractPatientInfo(conversationHistory, currentMessage) {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.warn('[Chatbot] OPENAI_API_KEY no disponible para extraer información del paciente');
+      return null;
+    }
+    
+    // Construir prompt para extraer información
+    const extractionPrompt = `Eres un asistente que extrae información estructurada de conversaciones. Analiza la siguiente conversación y extrae la información del paciente si está disponible.
+
+INSTRUCCIONES:
+- Extrae el NOMBRE completo del paciente si se menciona
+- Extrae el DOCUMENTO DE IDENTIDAD (cédula, pasaporte, etc.) si se menciona
+- Extrae el CORREO ELECTRÓNICO si se menciona
+- Si alguna información no está disponible, devuelve null para ese campo
+- Responde SOLO con un JSON válido en este formato exacto:
+{
+  "name": "nombre completo o null",
+  "document": "documento o null",
+  "email": "correo o null"
+}
+
+Conversación:
+${conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+Usuario actual: ${currentMessage}`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: extractionPrompt },
+          { role: 'user', content: 'Extrae la información del paciente de esta conversación.' }
+        ],
+        max_tokens: 200,
+        temperature: 0.3
+      })
+    });
+
+    if (!response.ok) {
+      console.error('[Chatbot] Error en extracción de información:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const extractedText = data.choices?.[0]?.message?.content?.trim();
+    
+    if (!extractedText) {
+      return null;
+    }
+
+    // Limpiar el texto (puede venir con markdown code blocks)
+    const cleanedText = extractedText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    try {
+      const patientInfo = JSON.parse(cleanedText);
+      console.log('[Chatbot] Información extraída del paciente:', patientInfo);
+      
+      // Validar que al menos un campo tenga valor
+      if (patientInfo.name || patientInfo.document || patientInfo.email) {
+        return {
+          name: patientInfo.name && patientInfo.name !== 'null' ? patientInfo.name : null,
+          document: patientInfo.document && patientInfo.document !== 'null' ? patientInfo.document : null,
+          email: patientInfo.email && patientInfo.email !== 'null' ? patientInfo.email : null
+        };
+      }
+      
+      return null;
+    } catch (parseError) {
+      console.error('[Chatbot] Error parseando información extraída:', parseError);
+      return null;
+    }
+  } catch (error) {
+    console.error('[Chatbot] Error extrayendo información del paciente:', error);
+    return null;
+  }
+}
+
+// Detectar si se está agendando una cita
+async function detectAppointmentBooking(conversationHistory, currentMessage) {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return false;
+    }
+    
+    const detectionPrompt = `Analiza la siguiente conversación y determina si el usuario está AGENDANDO o CONFIRMANDO una cita médica.
+
+Responde SOLO con "true" o "false" (sin comillas, sin explicaciones).
+
+Indicadores de agendamiento:
+- El usuario confirma una fecha y hora para una cita
+- El usuario acepta una propuesta de cita
+- El usuario confirma que quiere agendar
+- El usuario proporciona información para agendar (nombre, documento, etc.)
+
+Conversación:
+${conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+Usuario actual: ${currentMessage}`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: detectionPrompt },
+          { role: 'user', content: '¿Se está agendando una cita en esta conversación?' }
+        ],
+        max_tokens: 10,
+        temperature: 0.1
+      })
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const data = await response.json();
+    const result = data.choices?.[0]?.message?.content?.trim().toLowerCase();
+    
+    return result === 'true';
+  } catch (error) {
+    console.error('[Chatbot] Error detectando agendamiento:', error);
+    return false;
+  }
+}
+
 // Función para manejar mensajes de Messenger
 function handleMessage(event) {
   const senderId = event.sender.id;
@@ -453,6 +692,56 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     await saveMessage(phoneNumber, 'assistant', aiMessage);
     
     console.log(`[Chatbot] Mensajes guardados en base de datos para ${phoneNumber}`);
+    
+    // WORKFLOW: Detectar agendamiento de cita y crear/actualizar paciente
+    try {
+      // Obtener historial completo incluyendo el mensaje actual
+      const fullHistory = await getConversationHistory(phoneNumber, 20);
+      const fullHistoryWithCurrent = [
+        ...fullHistory,
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: aiMessage }
+      ];
+      
+      // Detectar si se está agendando una cita
+      const isBooking = await detectAppointmentBooking(fullHistory.slice(0, -1), userMessage);
+      
+      if (isBooking) {
+        console.log(`[Chatbot] 🎯 Agendamiento detectado para ${phoneNumber}`);
+        
+        // Verificar si el paciente ya existe
+        const existingPatient = await getPatientByPhone(phoneNumber);
+        
+        if (!existingPatient || !existingPatient.name || !existingPatient.document || !existingPatient.email) {
+          console.log(`[Chatbot] Extrayendo información del paciente...`);
+          
+          // Extraer información del paciente de la conversación
+          const patientInfo = await extractPatientInfo(fullHistoryWithCurrent, userMessage);
+          
+          if (patientInfo && (patientInfo.name || patientInfo.document || patientInfo.email)) {
+            // Crear o actualizar paciente
+            const patient = await createOrUpdatePatient(phoneNumber, patientInfo);
+            
+            if (patient) {
+              console.log(`[Chatbot] ✓ Paciente procesado: ${phoneNumber}`, {
+                name: patient.name,
+                document: patient.document,
+                email: patient.email
+              });
+            } else {
+              console.warn(`[Chatbot] ⚠ No se pudo crear/actualizar paciente para ${phoneNumber}`);
+            }
+          } else {
+            console.log(`[Chatbot] No se pudo extraer información suficiente del paciente`);
+          }
+        } else {
+          console.log(`[Chatbot] Paciente ya existe con información completa: ${phoneNumber}`);
+        }
+      }
+    } catch (workflowError) {
+      // No fallar la respuesta si el workflow tiene un error
+      console.error('[Chatbot] Error en workflow de paciente:', workflowError);
+    }
     
     return aiMessage || 'Lo siento, no puedo responder ahora mismo.';
   } catch (error) {
