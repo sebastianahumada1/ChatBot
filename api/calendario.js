@@ -133,9 +133,13 @@ export default async function handler(req, res) {
   </div>
 
   <script>
-    // Configuración de huso horario: Colombia (GMT-5)
-    const TIMEZONE = 'America/Bogota';
-    const TIMEZONE_OFFSET = -5; // GMT-5
+    // Prevenir errores de Shadow DOM y otros conflictos
+    (function() {
+      'use strict';
+      
+      // Configuración de huso horario: Colombia (GMT-5)
+      const TIMEZONE = 'America/Bogota';
+      const TIMEZONE_OFFSET = -5; // GMT-5
     
     // Función para obtener fecha actual en Colombia
     function getColombiaDate() {
@@ -222,20 +226,35 @@ export default async function handler(req, res) {
       return year + '-' + month + '-' + day;
     }
     
-    let currentDate = getColombiaDate();
-    let currentView = 'month';
-    let appointments = [];
+      let currentDate = getColombiaDate();
+      let currentView = 'month';
+      let appointments = [];
 
-    // Inicializar
-    document.addEventListener('DOMContentLoaded', () => {
-      updateDateTitle();
-      loadAppointments();
-      changeView('month');
-      
-      document.getElementById('prevBtn').addEventListener('click', () => navigateDate(-1));
-      document.getElementById('nextBtn').addEventListener('click', () => navigateDate(1));
-      document.getElementById('searchInput').addEventListener('input', filterAppointments);
-    });
+      // Inicializar solo una vez
+      let initialized = false;
+      function initializeCalendar() {
+        if (initialized) return;
+        initialized = true;
+        
+        updateDateTitle();
+        loadAppointments();
+        changeView('month');
+        
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const searchInput = document.getElementById('searchInput');
+        
+        if (prevBtn) prevBtn.addEventListener('click', () => navigateDate(-1));
+        if (nextBtn) nextBtn.addEventListener('click', () => navigateDate(1));
+        if (searchInput) searchInput.addEventListener('input', filterAppointments);
+      }
+
+      // Inicializar cuando el DOM esté listo
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeCalendar);
+      } else {
+        initializeCalendar();
+      }
 
     // Cambiar vista
     function changeView(view) {
@@ -597,12 +616,13 @@ export default async function handler(req, res) {
       changeView(currentView);
     }
 
-    // Escapar HTML
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
+      // Escapar HTML
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+    })(); // Cerrar IIFE para evitar conflictos con otros scripts
   </script>
 </body>
 </html>`;
