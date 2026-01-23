@@ -145,12 +145,41 @@ export default async function handler(req, res) {
       return colombiaTime;
     }
     
-    // Función para convertir fecha a Colombia
+    // Función para convertir fecha a Colombia (solo para fechas con hora)
     function toColombiaDate(date) {
       if (!date) return getColombiaDate();
       const d = new Date(date);
       const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
       return new Date(utc + (TIMEZONE_OFFSET * 3600000));
+    }
+    
+    // Función para parsear fecha de la base de datos (YYYY-MM-DD sin conversión de huso horario)
+    function parseDateFromDB(dateString) {
+      if (!dateString) return null;
+      // Si es solo una fecha (YYYY-MM-DD), crear la fecha directamente en Colombia
+      if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = dateString.split('-').map(Number);
+        // Crear fecha en hora local (Colombia) sin conversión de huso horario
+        return new Date(year, month - 1, day);
+      }
+      // Si tiene hora, convertir normalmente
+      return toColombiaDate(dateString);
+    }
+    
+    // Función para obtener fecha en formato YYYY-MM-DD desde una fecha de la BD
+    function getDateStringFromDB(dateString) {
+      if (!dateString) return '';
+      // Si ya es una cadena YYYY-MM-DD, devolverla directamente
+      if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return dateString;
+      }
+      // Si es un objeto Date, extraer año, mes, día
+      const date = parseDateFromDB(dateString);
+      if (!date) return '';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return year + '-' + month + '-' + day;
     }
     
     // Función para formatear fecha en formato Colombia
@@ -295,9 +324,8 @@ export default async function handler(req, res) {
       const hours = Array.from({ length: 14 }, (_, i) => i + 8); // 8 AM a 9 PM
       
       const dayAppointments = appointments.filter(apt => {
-        const aptDate = toColombiaDate(apt.appointment_date);
+        const aptDateStr = getDateStringFromDB(apt.appointment_date);
         const currentDateStr = getColombiaDateString(currentDate);
-        const aptDateStr = getColombiaDateString(aptDate);
         return aptDateStr === currentDateStr;
       });
       
@@ -387,9 +415,8 @@ export default async function handler(req, res) {
       
       gridHtml += days.map(day => {
           const dayAppointments = appointments.filter(apt => {
-            const aptDate = toColombiaDate(apt.appointment_date);
+            const aptDateStr = getDateStringFromDB(apt.appointment_date);
             const dayStr = getColombiaDateString(day);
-            const aptDateStr = getColombiaDateString(aptDate);
             return aptDateStr === dayStr;
           });
         
@@ -450,8 +477,9 @@ export default async function handler(req, res) {
       
       grid.innerHTML = days.map(day => {
         const dayAppointments = appointments.filter(apt => {
-          const aptDate = new Date(apt.appointment_date);
-          return aptDate.toDateString() === day.fullDate.toDateString();
+          const aptDateStr = getDateStringFromDB(apt.appointment_date);
+          const dayStr = getColombiaDateString(day.fullDate);
+          return aptDateStr === dayStr;
         });
         
         const today = getColombiaDate();
