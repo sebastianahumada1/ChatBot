@@ -446,10 +446,14 @@ export default async function handler(req, res) {
       gridHtml += '</div>';
       
       gridHtml += days.map(day => {
+          const dayStr = getColombiaDateString(day);
           const dayAppointments = appointments.filter(apt => {
             const aptDateStr = getDateStringFromDB(apt.appointment_date);
-            const dayStr = getColombiaDateString(day);
-            return aptDateStr === dayStr;
+            const matches = aptDateStr === dayStr;
+            if (matches) {
+              console.log('[DEBUG Semana] ✓ Cita encontrada para', dayStr, '- BD:', apt.appointment_date, 'Parseado:', aptDateStr);
+            }
+            return matches;
           });
         
         let dayHtml = '<div class="relative border-l border-[#f0f2f4]">' +
@@ -543,11 +547,12 @@ export default async function handler(req, res) {
         const dayStr = day.dateString || getColombiaDateString(day.fullDate);
         const dayAppointments = appointments.filter(apt => {
           const aptDateStr = getDateStringFromDB(apt.appointment_date);
-          // Debug para todas las citas y días
-          if (aptDateStr) {
-            console.log('[DEBUG Mes] Comparando - Cita BD:', apt.appointment_date, 'Parseado:', aptDateStr, 'vs Día:', dayStr, 'Match:', aptDateStr === dayStr);
+          const matches = aptDateStr === dayStr;
+          // Debug solo para citas relevantes
+          if (aptDateStr && matches) {
+            console.log('[DEBUG Mes] ✓ Cita encontrada para', dayStr, '- BD:', apt.appointment_date, 'Parseado:', aptDateStr);
           }
-          return aptDateStr === dayStr;
+          return matches;
         });
         
         const today = getColombiaDate();
