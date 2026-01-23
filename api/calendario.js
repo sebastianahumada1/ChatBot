@@ -167,19 +167,41 @@ export default async function handler(req, res) {
     }
     
     // Función para obtener fecha en formato YYYY-MM-DD desde una fecha de la BD
-    function getDateStringFromDB(dateString) {
-      if (!dateString) return '';
+    function getDateStringFromDB(dateValue) {
+      if (!dateValue) return '';
+      
       // Si ya es una cadena YYYY-MM-DD, devolverla directamente
-      if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return dateString;
+      if (typeof dateValue === 'string') {
+        // Extraer solo la parte de la fecha si viene con hora (YYYY-MM-DD HH:MM:SS)
+        const dateMatch = dateValue.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          return dateMatch[1]; // Devolver solo YYYY-MM-DD
+        }
+        // Si ya es YYYY-MM-DD, devolverla
+        if (dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          return dateValue;
+        }
       }
-      // Si es un objeto Date, extraer año, mes, día
-      const date = parseDateFromDB(dateString);
-      if (!date) return '';
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return year + '-' + month + '-' + day;
+      
+      // Si es un objeto Date, extraer año, mes, día usando UTC para evitar problemas de zona horaria
+      if (dateValue instanceof Date) {
+        const year = dateValue.getUTCFullYear();
+        const month = String(dateValue.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(dateValue.getUTCDate()).padStart(2, '0');
+        return year + '-' + month + '-' + day;
+      }
+      
+      // Si es un objeto con propiedades de fecha
+      if (dateValue && typeof dateValue === 'object') {
+        if (dateValue.year && dateValue.month && dateValue.day) {
+          const year = String(dateValue.year).padStart(4, '0');
+          const month = String(dateValue.month).padStart(2, '0');
+          const day = String(dateValue.day).padStart(2, '0');
+          return year + '-' + month + '-' + day;
+        }
+      }
+      
+      return '';
     }
     
     // Función para formatear fecha en formato Colombia
@@ -305,6 +327,13 @@ export default async function handler(req, res) {
         const response = await fetch('/api/appointments-all?startDate=' + startDateStr + '&endDate=' + endDateStr);
         const data = await response.json();
         appointments = data.appointments || [];
+        
+        // Debug: mostrar todas las citas cargadas
+        console.log('[DEBUG] Citas cargadas:', appointments.map(apt => ({
+          appointment_date: apt.appointment_date,
+          parsed: getDateStringFromDB(apt.appointment_date),
+          time: apt.appointment_time
+        })));
         if (currentView === 'day') {
           renderDayView();
         } else if (currentView === 'week') {
