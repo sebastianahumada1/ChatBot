@@ -133,7 +133,42 @@ export default async function handler(req, res) {
   </div>
 
   <script>
-    let currentDate = new Date();
+    // Configuración de huso horario: Colombia (GMT-5)
+    const TIMEZONE = 'America/Bogota';
+    const TIMEZONE_OFFSET = -5; // GMT-5
+    
+    // Función para obtener fecha actual en Colombia
+    function getColombiaDate() {
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const colombiaTime = new Date(utc + (TIMEZONE_OFFSET * 3600000));
+      return colombiaTime;
+    }
+    
+    // Función para convertir fecha a Colombia
+    function toColombiaDate(date) {
+      if (!date) return getColombiaDate();
+      const d = new Date(date);
+      const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+      return new Date(utc + (TIMEZONE_OFFSET * 3600000));
+    }
+    
+    // Función para formatear fecha en formato Colombia
+    function formatColombiaDate(date, options = {}) {
+      const colDate = toColombiaDate(date);
+      return colDate.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', ...options });
+    }
+    
+    // Función para obtener fecha en formato YYYY-MM-DD en Colombia
+    function getColombiaDateString(date) {
+      const colDate = toColombiaDate(date);
+      const year = colDate.getFullYear();
+      const month = String(colDate.getMonth() + 1).padStart(2, '0');
+      const day = String(colDate.getDate()).padStart(2, '0');
+      return year + '-' + month + '-' + day;
+    }
+    
+    let currentDate = getColombiaDate();
     let currentView = 'month';
     let appointments = [];
 
@@ -193,7 +228,7 @@ export default async function handler(req, res) {
 
     // Ir a hoy
     function goToToday() {
-      currentDate = new Date();
+      currentDate = getColombiaDate();
       updateDateTitle();
       loadAppointments();
     }
@@ -202,17 +237,17 @@ export default async function handler(req, res) {
     function updateDateTitle() {
       const title = document.getElementById('dateTitle');
       if (currentView === 'day') {
-        title.textContent = currentDate.toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        title.textContent = formatColombiaDate(currentDate, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       } else if (currentView === 'week') {
         const weekStart = new Date(currentDate);
         weekStart.setDate(currentDate.getDate() - currentDate.getDay());
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
-        const weekStartStr = weekStart.toLocaleDateString('es-CO', { month: 'short', day: 'numeric' });
-        const weekEndStr = weekEnd.toLocaleDateString('es-CO', { month: 'short', day: 'numeric', year: 'numeric' });
+        const weekStartStr = formatColombiaDate(weekStart, { month: 'short', day: 'numeric' });
+        const weekEndStr = formatColombiaDate(weekEnd, { month: 'short', day: 'numeric', year: 'numeric' });
         title.textContent = weekStartStr + ' - ' + weekEndStr;
       } else {
-        title.textContent = currentDate.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+        title.textContent = formatColombiaDate(currentDate, { month: 'long', year: 'numeric' });
       }
     }
 
@@ -236,8 +271,8 @@ export default async function handler(req, res) {
           endDate.setDate(startDate.getDate() + 1);
         }
         
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
+        const startDateStr = getColombiaDateString(startDate);
+        const endDateStr = getColombiaDateString(endDate);
         const response = await fetch('/api/appointments-all?startDate=' + startDateStr + '&endDate=' + endDateStr);
         const data = await response.json();
         appointments = data.appointments || [];
@@ -260,8 +295,10 @@ export default async function handler(req, res) {
       const hours = Array.from({ length: 14 }, (_, i) => i + 8); // 8 AM a 9 PM
       
       const dayAppointments = appointments.filter(apt => {
-        const aptDate = new Date(apt.appointment_date);
-        return aptDate.toDateString() === currentDate.toDateString();
+        const aptDate = toColombiaDate(apt.appointment_date);
+        const currentDateStr = getColombiaDateString(currentDate);
+        const aptDateStr = getColombiaDateString(aptDate);
+        return aptDateStr === currentDateStr;
       });
       
       container.innerHTML = hours.map(hour => {
@@ -325,8 +362,9 @@ export default async function handler(req, res) {
       // Header de días
       const header = document.getElementById('weekHeader');
       header.innerHTML = '<div class="h-12"></div>' + days.map(day => {
-        const isToday = day.toDateString() === new Date().toDateString();
-        const dayName = day.toLocaleDateString('es-CO', { weekday: 'short' });
+        const today = getColombiaDate();
+        const isToday = getColombiaDateString(day) === getColombiaDateString(today);
+        const dayName = formatColombiaDate(day, { weekday: 'short' });
         const dayNum = day.getDate();
         return '<div class="h-12 flex flex-col items-center justify-center border-l border-[#f0f2f4]' + (isToday ? ' bg-primary/10' : '') + '">' +
           '<span class="text-[10px] font-bold' + (isToday ? ' text-primary' : ' text-[#617589]') + ' uppercase tracking-tighter">' + dayName + '</span>' +
@@ -348,10 +386,12 @@ export default async function handler(req, res) {
       gridHtml += '</div>';
       
       gridHtml += days.map(day => {
-        const dayAppointments = appointments.filter(apt => {
-          const aptDate = new Date(apt.appointment_date);
-          return aptDate.toDateString() === day.toDateString();
-        });
+          const dayAppointments = appointments.filter(apt => {
+            const aptDate = toColombiaDate(apt.appointment_date);
+            const dayStr = getColombiaDateString(day);
+            const aptDateStr = getColombiaDateString(aptDate);
+            return aptDateStr === dayStr;
+          });
         
         let dayHtml = '<div class="relative border-l border-[#f0f2f4]">' +
           '<div class="absolute inset-0 grid grid-rows-[repeat(14,80px)] divide-y divide-[#f0f2f4]">' +
@@ -414,7 +454,8 @@ export default async function handler(req, res) {
           return aptDate.toDateString() === day.fullDate.toDateString();
         });
         
-        const isToday = day.fullDate.toDateString() === new Date().toDateString();
+        const today = getColombiaDate();
+        const isToday = getColombiaDateString(day.fullDate) === getColombiaDateString(today);
         const bgClass = day.isCurrentMonth ? 'bg-white' : 'bg-gray-50 opacity-50';
         const todayClass = isToday ? ' bg-primary/5 ring-1 ring-inset ring-primary/20' : '';
         const dateClass = isToday ? 'text-primary bg-white size-6 flex items-center justify-center rounded-full shadow-sm' : 'text-[#617589]';

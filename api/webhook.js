@@ -174,7 +174,7 @@ async function createOrUpdatePatient(phoneNumber, patientData) {
     if (existingPatient) {
       // Actualizar paciente existente solo con datos nuevos
       const updateData = {
-        updated_at: new Date().toISOString()
+        updated_at: getColombiaDate().toISOString()
       };
       
       if (name && !existingPatient.name) updateData.name = name;
@@ -230,10 +230,39 @@ async function createOrUpdatePatient(phoneNumber, patientData) {
 
 // ==================== FUNCIONES DE GESTIÓN DE CITAS ====================
 
+// Configuración de huso horario: Colombia (GMT-5)
+const COLOMBIA_TIMEZONE = 'America/Bogota';
+const COLOMBIA_OFFSET = -5; // GMT-5
+
+// Función para obtener fecha actual en Colombia
+function getColombiaDate() {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const colombiaTime = new Date(utc + (COLOMBIA_OFFSET * 3600000));
+  return colombiaTime;
+}
+
+// Función para convertir fecha a Colombia
+function toColombiaDate(date) {
+  if (!date) return getColombiaDate();
+  const d = new Date(date);
+  const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+  return new Date(utc + (COLOMBIA_OFFSET * 3600000));
+}
+
+// Función para obtener fecha en formato YYYY-MM-DD en Colombia
+function getColombiaDateString(date) {
+  const colDate = toColombiaDate(date);
+  const year = colDate.getFullYear();
+  const month = String(colDate.getMonth() + 1).padStart(2, '0');
+  const day = String(colDate.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
+}
+
 // Generar slots disponibles basándose en horarios de negocio
 function generateAvailableSlots(businessHours, startDate, daysAhead = 30) {
   const slots = [];
-  const today = new Date(startDate);
+  const today = toColombiaDate(startDate);
   today.setHours(0, 0, 0, 0);
   
   // Mapeo de días de la semana
@@ -347,11 +376,12 @@ function generateAvailableSlots(businessHours, startDate, daysAhead = 30) {
       }
       
       while (currentTime < endTime) {
+        const colDate = toColombiaDate(currentTime);
         slots.push({
-          date: currentDate.toISOString().split('T')[0],
-          time: `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}`,
+          date: getColombiaDateString(colDate),
+          time: `${String(colDate.getHours()).padStart(2, '0')}:${String(colDate.getMinutes()).padStart(2, '0')}`,
           location: location,
-          datetime: new Date(currentTime)
+          datetime: colDate
         });
         
         currentTime.setMinutes(currentTime.getMinutes() + interval);
@@ -385,7 +415,7 @@ async function getAvailableSlots(date, location = null, daysAhead = 7) {
     }
     
     // Obtener citas ocupadas para el rango de fechas
-    const startDate = new Date(date);
+    const startDate = toColombiaDate(date);
     startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + daysAhead);
@@ -606,7 +636,7 @@ async function cancelAppointment(appointmentId) {
       .from('appointments')
       .update({
         status: 'cancelled',
-        cancelled_at: new Date().toISOString()
+        cancelled_at: getColombiaDate().toISOString()
       })
       .eq('id', appointmentId)
       .select()
@@ -1081,6 +1111,8 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
   
   // Agregar instrucciones sobre gestión de citas
   const currentYear = 2026; // Año base para agendamiento
+  const colombiaDate = getColombiaDate();
+  const currentDateStr = getColombiaDateString(colombiaDate);
   const locations = config?.business_info?.locations || [];
   let locationDetails = '';
   if (locations && locations.length > 0) {
@@ -1091,7 +1123,7 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     locationDetails = '- Rodadero: Cra. 4 #12-55, Piso 3 (Frente a Olímpica Rodadero, cerca al C.C. Arrecife)\n- Manzanares: Calle 30 #5-44, Local 7 (Cerca a la Iglesia de Manzanares)';
   }
   
-  systemPrompt += `\n\nGESTIÓN DE CITAS (AÑO BASE: ${currentYear}):\n- IMPORTANTE: Todas las fechas deben incluir el año completo (formato: YYYY-MM-DD). El año actual es ${currentYear}.\n- Cuando el usuario quiera agendar una cita, sigue este orden:\n  1. PRIMERO pregunta una fecha probable y un horario.\n     Ejemplo: "¿Qué fecha te gustaría para tu cita? (puedes decirme el día y mes, por ejemplo: 25 de enero)"\n     Luego: "¿A qué hora te conviene? (formato: HH:MM, ejemplo: 14:00 o 2:00 PM)"\n  2. LUEGO pregunta en qué sede.\n     Ejemplo: "¿En qué sede te gustaría agendar?\n     • Rodadero\n     • Manzanares"\n  3. Cuando el cliente elija la sede, da información CORTA de dónde queda:\n     ${locationDetails}\n  4. Finalmente, muestra un RESUMEN de la cita con todos los detalles y SOLICITA CONFIRMACIÓN explícita.\n     Ejemplo de resumen: "Resumen de tu cita:\n     📅 Fecha: [fecha completa con año]\n     🕐 Hora: [hora]\n     📍 Sede: [ubicación]\n     🦷 Servicio: [servicio si aplica]\n     ¿Confirmas esta cita? Responde 'sí', 'confirmo' o 'acepto' para agendar."\n  5. SOLO cuando el usuario confirme explícitamente (diciendo "sí", "confirmo", "acepto", "correcto", etc.), entonces la cita quedará agendada.\n  6. Si el usuario no confirma o dice "no", no agendes la cita.\n- Si el usuario pregunta por disponibilidad, usa la información de disponibilidad que se te proporciona y muéstrala de forma clara.\n- Si el usuario quiere modificar o cancelar una cita, primero consulta sus citas existentes.\n- NUNCA agendes una cita sin seguir este orden: fecha/horario → sede → información de ubicación → resumen → confirmación.`;
+  systemPrompt += `\n\nGESTIÓN DE CITAS (AÑO BASE: ${currentYear}, HUSO HORARIO: Colombia GMT-5):\n- IMPORTANTE: Todas las fechas deben incluir el año completo (formato: YYYY-MM-DD). El año actual es ${currentYear}.\n- IMPORTANTE: Todas las fechas y horas están en el huso horario de Colombia (GMT-5, America/Bogota).\n- Cuando el usuario quiera agendar una cita, sigue este orden:\n  1. PRIMERO pregunta una fecha probable y un horario.\n     Ejemplo: "¿Qué fecha te gustaría para tu cita? (puedes decirme el día y mes, por ejemplo: 25 de enero)"\n     Luego: "¿A qué hora te conviene? (formato: HH:MM, ejemplo: 14:00 o 2:00 PM)"\n  2. LUEGO pregunta en qué sede.\n     Ejemplo: "¿En qué sede te gustaría agendar?\n     • Rodadero\n     • Manzanares"\n  3. Cuando el cliente elija la sede, da información CORTA de dónde queda:\n     ${locationDetails}\n  4. Finalmente, muestra un RESUMEN de la cita con todos los detalles y SOLICITA CONFIRMACIÓN explícita.\n     Ejemplo de resumen: "Resumen de tu cita:\n     📅 Fecha: [fecha completa con año]\n     🕐 Hora: [hora]\n     📍 Sede: [ubicación]\n     🦷 Servicio: [servicio si aplica]\n     ¿Confirmas esta cita? Responde 'sí', 'confirmo' o 'acepto' para agendar."\n  5. SOLO cuando el usuario confirme explícitamente (diciendo "sí", "confirmo", "acepto", "correcto", etc.), entonces la cita quedará agendada.\n  6. Si el usuario no confirma o dice "no", no agendes la cita.\n- Si el usuario pregunta por disponibilidad, usa la información de disponibilidad que se te proporciona y muéstrala de forma clara.\n- Si el usuario quiere modificar o cancelar una cita, primero consulta sus citas existentes.\n- NUNCA agendes una cita sin seguir este orden: fecha/horario → sede → información de ubicación → resumen → confirmación.`;
   
   // Detectar si el usuario pregunta por disponibilidad o citas
   const appointmentKeywords = ['disponibilidad', 'disponible', 'cita', 'agendar', 'horario', 'fecha', 'cuando puedo', 'cuando hay', 'agenda'];
@@ -1103,8 +1135,8 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
   let availabilityInfo = '';
   if (isAskingForAvailability) {
     console.log('[Chatbot] Usuario pregunta por disponibilidad, consultando slots...');
-    const today = new Date();
-    const availableSlots = await getAvailableSlots(today.toISOString().split('T')[0], null, 7);
+    const today = getColombiaDate();
+    const availableSlots = await getAvailableSlots(getColombiaDateString(today), null, 7);
     
     if (availableSlots.length > 0) {
       // Agrupar por fecha y ubicación
@@ -1120,8 +1152,8 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
       // Formatear información de disponibilidad
       const availabilityLines = ['\n\nDISPONIBILIDAD DE CITAS (próximos 7 días):'];
       Object.keys(slotsByDate).sort().forEach(date => {
-        const dateObj = new Date(date);
-        const dateStr = dateObj.toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const dateObj = toColombiaDate(date);
+        const dateStr = dateObj.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         availabilityLines.push(`\n${dateStr}:`);
         
         if (slotsByDate[date].rodadero.length > 0) {
@@ -1467,7 +1499,7 @@ export default async function handler(req, res) {
     const body = req.body;
 
     console.log('[Chatbot] ===== WEBHOOK RECIBIDO =====');
-    console.log('[Chatbot] Timestamp:', new Date().toISOString());
+    console.log('[Chatbot] Timestamp:', getColombiaDate().toISOString());
     console.log('[Chatbot] Method:', req.method);
     console.log('[Chatbot] Body completo:', JSON.stringify(body, null, 2));
 
