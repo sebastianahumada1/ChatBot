@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MedSync CRM - Full Agenda View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#137fec",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .timeline-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .timeline-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .timeline-scroll::-webkit-scrollbar-thumb {
+            background: #dbe0e6;
+            border-radius: 10px;
+        }
+        .dark .timeline-scroll::-webkit-scrollbar-thumb {
+            background: #374151;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-[#111418] dark:text-white font-display overflow-hidden">
+<div class="flex h-screen overflow-hidden">
+<main class="flex-1 flex flex-col bg-background-light dark:bg-background-dark overflow-hidden">
+<header class="h-16 flex-shrink-0 flex items-center justify-between px-8 bg-white dark:bg-[#1a242f] border-b border-[#dbe0e6] dark:border-gray-700 shadow-sm z-20">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-3">
+<div class="bg-primary size-8 rounded-lg flex items-center justify-center text-white">
+<span class="material-symbols-outlined text-xl">health_and_safety</span>
+</div>
+<h1 class="text-base font-bold leading-tight hidden md:block">MedSync CRM</h1>
+</div>
+<div class="h-4 w-px bg-gray-300 dark:bg-gray-600"></div>
+<div class="flex items-center gap-4">
+<h2 class="text-lg font-bold">Agenda View</h2>
+<p class="text-sm text-[#617589] font-medium hidden sm:block">Wednesday, Oct 25, 2023</p>
+</div>
+<div class="relative hidden lg:block ml-4">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg">search</span>
+<input class="pl-10 pr-4 py-1.5 text-sm bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-lg w-64 focus:ring-primary focus:border-primary" placeholder="Search appointments..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 mr-4">
+<span class="text-xs font-bold text-[#617589] uppercase tracking-wider">Dr. Sarah Chen</span>
+<span class="material-symbols-outlined text-gray-400 cursor-pointer">expand_more</span>
+</div>
+<div class="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg border border-[#dbe0e6] dark:border-gray-700">
+<button class="px-4 py-1.5 text-xs font-bold rounded-md hover:bg-white/50 dark:hover:bg-gray-700/50">Month</button>
+<button class="px-4 py-1.5 text-xs font-bold rounded-md hover:bg-white/50 dark:hover:bg-gray-700/50">Week</button>
+<button class="px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 shadow-sm">Day</button>
+</div>
+<button class="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary/90 transition-colors">
+<span class="material-symbols-outlined text-sm">add</span> New Booking
+                </button>
+<div class="h-8 w-8 rounded-full bg-cover bg-center ml-2 border border-gray-200 dark:border-gray-700" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB2DsXUeXjWvxQIaQublJSoWp-tTH7ZGJ-A51HvohmSgCSseQzNlxOCmuzbFhcnIqHluIyvgiyCyyAnK_zV9fXX83HIstFggTO3vAbYs2fCnTqlfwgDMRIK2-B8G_BxAC20FoEEDORBdWeDf6Zd1LdO9ldePnOMxBpH6atnVPBm-PPM9nOiRObpW5nz9TnmOlh2MgCK3RX5aP4lFUEfnAy5XAfv2AaQsH0LHr4xYCGTDLur6rBrolXhc481m9lb1g2kwe44bm_f4Jxl');"></div>
+</div>
+</header>
+<div class="flex-1 overflow-y-auto timeline-scroll p-8 bg-[#fdfdfe] dark:bg-background-dark">
+<div class="max-w-7xl mx-auto space-y-0 relative">
+<div class="absolute top-[320px] left-0 right-0 z-10 flex items-center gap-4 pointer-events-none">
+<span class="text-[10px] font-bold text-red-500 bg-white dark:bg-background-dark px-2 py-0.5 rounded shadow-sm border border-red-100 dark:border-red-900/30">11:15 AM</span>
+<div class="h-[1px] flex-1 bg-red-500"></div>
+</div>
+<div class="flex gap-8 group">
+<div class="w-20 text-right py-4">
+<span class="text-xs font-bold text-[#617589]">08 AM</span>
+</div>
+<div class="flex-1 border-t border-[#f0f2f4] dark:border-gray-800 pt-4 pb-12 min-h-[100px]">
+<div class="text-xs text-gray-400 italic">No appointments scheduled</div>
+</div>
+</div>
+<div class="flex gap-8">
+<div class="w-20 text-right py-4">
+<span class="text-xs font-bold text-[#617589]">09 AM</span>
+</div>
+<div class="flex-1 border-t border-[#f0f2f4] dark:border-gray-800 pt-4 pb-12">
+<div class="bg-blue-50 dark:bg-blue-900/10 border-l-4 border-blue-500 p-6 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all group border border-blue-100/50 dark:border-blue-800/20">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<h4 class="font-bold text-lg text-blue-900 dark:text-blue-100">James Harrison</h4>
+<span class="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-bold uppercase">Cardiology</span>
+</div>
+<p class="text-sm text-blue-700/70 dark:text-blue-300/70 font-medium">Follow-up: Hypertension management</p>
+</div>
+<div class="text-right">
+<p class="text-sm font-bold text-blue-900 dark:text-blue-100">09:00 - 09:45</p>
+<div class="flex items-center gap-1 justify-end text-green-600 mt-2">
+<span class="material-symbols-outlined text-sm">smart_toy</span>
+<span class="text-[10px] font-bold uppercase tracking-tight">AI Booked</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex gap-8">
+<div class="w-20 text-right py-4">
+<span class="text-xs font-bold text-primary">10 AM</span>
+</div>
+<div class="flex-1 border-t border-[#f0f2f4] dark:border-gray-800 pt-4 pb-12">
+<div class="bg-white dark:bg-gray-800/50 border-l-4 border-primary p-6 rounded-xl shadow-lg ring-1 ring-primary/10 cursor-pointer relative">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<h4 class="font-bold text-xl text-primary">Sarah Miller</h4>
+<span class="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded font-bold uppercase">Cardiology</span>
+<span class="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold uppercase">Urgent</span>
+</div>
+<p class="text-sm text-[#617589] dark:text-gray-300 font-medium max-w-2xl">Annual heart check-up &amp; Chest discomfort. Patient reported mild tachycardia during the morning walk.</p>
+<div class="mt-4 flex gap-6">
+<div class="flex items-center gap-1 text-[#617589] text-xs">
+<span class="material-symbols-outlined text-sm">phone_iphone</span>
+<span>WhatsApp Confirmed</span>
+</div>
+<div class="flex items-center gap-1 text-[#617589] text-xs">
+<span class="material-symbols-outlined text-sm">person</span>
+<span>Female, 42</span>
+</div>
+<div class="flex items-center gap-1 text-[#617589] text-xs">
+<span class="material-symbols-outlined text-sm">history</span>
+<span>Last visit: 6 months ago</span>
+</div>
+</div>
+</div>
+<div class="text-right">
+<p class="text-base font-bold text-primary">10:00 - 11:00</p>
+<div class="flex items-center gap-1 justify-end text-green-600 mt-2">
+<span class="material-symbols-outlined text-sm">smart_toy</span>
+<span class="text-[10px] font-bold uppercase tracking-tight">AI Booked</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex gap-8">
+<div class="w-20 text-right py-4">
+<span class="text-xs font-bold text-[#617589]">11 AM</span>
+</div>
+<div class="flex-1 border-t border-[#f0f2f4] dark:border-gray-800 pt-4 pb-12">
+<div class="bg-green-50 dark:bg-green-900/10 border-l-4 border-green-500 p-6 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all border border-green-100/50 dark:border-green-800/20">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<h4 class="font-bold text-lg text-green-900 dark:text-green-100">Mark Sloan</h4>
+<span class="text-[10px] bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-2 py-0.5 rounded font-bold uppercase">General</span>
+</div>
+<p class="text-sm text-green-700/70 dark:text-green-300/70 font-medium">Regular physical exam</p>
+</div>
+<div class="text-right">
+<p class="text-sm font-bold text-green-900 dark:text-green-100">11:45 - 12:15</p>
+<div class="flex items-center gap-1 justify-end text-green-600 mt-2">
+<span class="material-symbols-outlined text-sm">smart_toy</span>
+<span class="text-[10px] font-bold uppercase tracking-tight">AI Booked</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex gap-8">
+<div class="w-20 text-right py-4">
+<span class="text-xs font-bold text-[#617589]">12 PM</span>
+</div>
+<div class="flex-1 border-t border-[#f0f2f4] dark:border-gray-800 pt-4 pb-12">
+<div class="flex items-center gap-3 py-4 px-6 bg-gray-50 dark:bg-gray-800/30 rounded-lg text-[#617589]">
+<span class="material-symbols-outlined text-sm">restaurant</span>
+<span class="text-xs font-bold uppercase tracking-widest">Lunch Break</span>
+</div>
+</div>
+</div>
+<div class="flex gap-8">
+<div class="w-20 text-right py-4">
+<span class="text-xs font-bold text-[#617589]">01 PM</span>
+</div>
+<div class="flex-1 border-t border-[#f0f2f4] dark:border-gray-800 pt-4 pb-12">
+<div class="bg-blue-50 dark:bg-blue-900/10 border-l-4 border-blue-500 p-6 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all border border-blue-100/50 dark:border-blue-800/20">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<h4 class="font-bold text-lg text-blue-900 dark:text-blue-100">Emma Wilson</h4>
+<span class="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-bold uppercase">Cardiology</span>
+</div>
+<p class="text-sm text-blue-700/70 dark:text-blue-300/70 font-medium">ECG Screening</p>
+</div>
+<div class="text-right">
+<p class="text-sm font-bold text-blue-900 dark:text-blue-100">01:00 - 01:30</p>
+<div class="flex items-center gap-1 justify-end text-green-600 mt-2">
+<span class="material-symbols-outlined text-sm">smart_toy</span>
+<span class="text-[10px] font-bold uppercase tracking-tight">AI Booked</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex gap-8">
+<div class="w-20 text-right py-4">
+<span class="text-xs font-bold text-[#617589]">02 PM</span>
+</div>
+<div class="flex-1 border-t border-[#f0f2f4] dark:border-gray-800 pt-4 pb-12">
+<div class="text-xs text-gray-400 italic">Remaining afternoon slots available</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+
+</body></html>

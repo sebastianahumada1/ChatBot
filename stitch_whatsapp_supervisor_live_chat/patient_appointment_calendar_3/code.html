@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MedSync CRM - Monthly Calendar View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#137fec",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            grid-auto-rows: minmax(120px, 1fr);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #dbe0e6;
+            border-radius: 10px;
+        }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #374151;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-[#111418] dark:text-white font-display overflow-hidden">
+<div class="flex h-screen overflow-hidden">
+<main class="flex-1 flex flex-col bg-background-light dark:bg-background-dark overflow-hidden">
+<header class="h-16 flex-shrink-0 flex items-center justify-between px-8 bg-white dark:bg-[#1a242f] border-b border-[#dbe0e6] dark:border-gray-700 shadow-sm z-20">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-3">
+<div class="bg-primary size-8 rounded-lg flex items-center justify-center text-white">
+<span class="material-symbols-outlined text-xl">health_and_safety</span>
+</div>
+<h1 class="text-base font-bold leading-tight hidden md:block">MedSync CRM</h1>
+</div>
+<div class="h-4 w-px bg-gray-300 dark:bg-gray-600"></div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<button class="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+<span class="material-symbols-outlined text-lg">chevron_left</span>
+</button>
+<h2 class="text-lg font-bold">October 2023</h2>
+<button class="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+<span class="material-symbols-outlined text-lg">chevron_right</span>
+</button>
+</div>
+</div>
+<div class="relative hidden lg:block ml-4">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg">search</span>
+<input class="pl-10 pr-4 py-1.5 text-sm bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-lg w-64 focus:ring-primary focus:border-primary" placeholder="Search appointments..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 mr-4">
+<span class="text-xs font-bold text-[#617589] uppercase tracking-wider">Dr. Sarah Chen</span>
+<span class="material-symbols-outlined text-gray-400 cursor-pointer">expand_more</span>
+</div>
+<div class="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg border border-[#dbe0e6] dark:border-gray-700">
+<button class="px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 shadow-sm">Month</button>
+<button class="px-4 py-1.5 text-xs font-bold rounded-md hover:bg-white/50 dark:hover:bg-gray-700/50">Week</button>
+<button class="px-4 py-1.5 text-xs font-bold rounded-md hover:bg-white/50 dark:hover:bg-gray-700/50">Day</button>
+</div>
+<div class="h-8 w-8 rounded-full bg-cover bg-center ml-2 border border-gray-200 dark:border-gray-700" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDFb94aEmlL9Ty81cJEmZqppJVM-dITKEDrk2g06vtTEpQx-9BJbepNhhJz3av2WxD4fe1h8rBDGPdkH_TSTm69e7ERaOhjc8UYIKJiZKktfh1jQhHZcTAnxsqFrhkzYMnBf5rbJfVXYl1HZiIPMrlxNzIuTtYT-vbnx05PHGA8AWhiT0Fw9pC3X0v9pCEjE8UUYX4-Bl3Oh2raSixJsK4nC6sElTpiNlc9Z2_5nO6RTMwNx2CYN3LxY0R1quhInT6RdAdVC1tBmIbK');"></div>
+</div>
+</header>
+<div class="flex-1 overflow-hidden flex flex-col">
+<div class="grid grid-cols-7 border-b border-[#dbe0e6] dark:border-gray-700 bg-white dark:bg-[#1a242f]">
+<div class="py-3 text-center text-xs font-bold text-[#617589] uppercase tracking-wider">Sun</div>
+<div class="py-3 text-center text-xs font-bold text-[#617589] uppercase tracking-wider">Mon</div>
+<div class="py-3 text-center text-xs font-bold text-[#617589] uppercase tracking-wider">Tue</div>
+<div class="py-3 text-center text-xs font-bold text-[#617589] uppercase tracking-wider">Wed</div>
+<div class="py-3 text-center text-xs font-bold text-[#617589] uppercase tracking-wider">Thu</div>
+<div class="py-3 text-center text-xs font-bold text-[#617589] uppercase tracking-wider">Fri</div>
+<div class="py-3 text-center text-xs font-bold text-[#617589] uppercase tracking-wider">Sat</div>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar">
+<div class="calendar-grid border-l border-[#dbe0e6] dark:border-gray-700">
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]">
+<span class="text-sm font-semibold text-[#617589]">1</span>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]">
+<span class="text-sm font-semibold text-[#617589]">2</span>
+<div class="mt-2 space-y-1">
+<div class="text-[10px] bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-1 rounded font-medium truncate">09:00 J. Harrison</div>
+<div class="text-[10px] bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 p-1 rounded font-medium truncate">11:45 M. Sloan</div>
+</div>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]">
+<span class="text-sm font-semibold text-[#617589]">3</span>
+<div class="mt-2 space-y-1">
+<div class="text-[10px] bg-primary/10 text-primary p-1 rounded font-medium truncate">10:00 S. Miller</div>
+</div>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]">
+<span class="text-sm font-semibold text-[#617589]">4</span>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]">
+<span class="text-sm font-semibold text-[#617589]">5</span>
+<div class="mt-2 space-y-1">
+<div class="text-[10px] bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-1 rounded font-medium truncate">08:30 R. Vance</div>
+<div class="text-[10px] bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-1 rounded font-medium truncate">09:15 P. Parker</div>
+<div class="text-[10px] bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-1 rounded font-medium truncate">10:00 T. Stark</div>
+<div class="text-[10px] text-[#617589] font-bold pl-1">+2 more</div>
+</div>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]">
+<span class="text-sm font-semibold text-[#617589]">6</span>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]">
+<span class="text-sm font-semibold text-[#617589]">7</span>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">8</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">9</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">10</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">11</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">12</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">13</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">14</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">15</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">16</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">17</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">18</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">19</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">20</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">21</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">22</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">23</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">24</span></div>
+<div class="bg-primary/5 dark:bg-primary/10 border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px] ring-1 ring-inset ring-primary/20">
+<div class="flex justify-between items-start">
+<span class="text-sm font-bold text-primary bg-white dark:bg-gray-800 size-6 flex items-center justify-center rounded-full shadow-sm">25</span>
+<span class="text-[10px] font-bold text-primary uppercase">Today</span>
+</div>
+<div class="mt-2 space-y-1">
+<div class="text-[10px] bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 p-1 rounded font-bold truncate border border-blue-100/50">09:00 J. Harrison</div>
+<div class="text-[10px] bg-primary text-white p-1 rounded font-bold truncate shadow-sm">10:00 S. Miller</div>
+<div class="text-[10px] bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-300 p-1 rounded font-bold truncate border border-green-100/50">11:45 M. Sloan</div>
+<div class="text-[10px] text-primary font-bold pl-1">+3 more</div>
+</div>
+</div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">26</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">27</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">28</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">29</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">30</span></div>
+<div class="bg-white dark:bg-background-dark border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px]"><span class="text-sm font-semibold text-[#617589]">31</span></div>
+<div class="bg-gray-50 dark:bg-gray-800/40 border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px] opacity-50"><span class="text-sm font-semibold text-gray-400">1</span></div>
+<div class="bg-gray-50 dark:bg-gray-800/40 border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px] opacity-50"><span class="text-sm font-semibold text-gray-400">2</span></div>
+<div class="bg-gray-50 dark:bg-gray-800/40 border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px] opacity-50"><span class="text-sm font-semibold text-gray-400">3</span></div>
+<div class="bg-gray-50 dark:bg-gray-800/40 border-r border-b border-[#dbe0e6] dark:border-gray-700 p-2 min-h-[140px] opacity-50"><span class="text-sm font-semibold text-gray-400">4</span></div>
+</div>
+</div>
+</div>
+</main>
+</div>
+
+</body></html>

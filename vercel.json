@@ -24,6 +24,14 @@
     {
       "source": "/api/appointments",
       "destination": "/api/appointments"
+    },
+    {
+      "source": "/api/appointments-all",
+      "destination": "/api/appointments"
+    },
+    {
+      "source": "/calendario",
+      "destination": "/api/calendario"
     }
   ],
   "functions": {
@@ -43,6 +51,9 @@
       "maxDuration": 10
     },
     "api/appointments.js": {
+      "maxDuration": 10
+    },
+    "api/calendario.js": {
       "maxDuration": 10
     }
   }

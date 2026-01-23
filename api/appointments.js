@@ -17,10 +17,46 @@ export default async function handler(req, res) {
     const supabase = getSupabaseClient();
     
     if (req.method === 'GET') {
+      // Si hay startDate y endDate, obtener todas las citas en ese rango
+      if (req.query.startDate && req.query.endDate) {
+        const { data: appointments, error } = await supabase
+          .from('appointments')
+          .select('*')
+          .gte('appointment_date', req.query.startDate)
+          .lte('appointment_date', req.query.endDate)
+          .in('status', ['scheduled', 'confirmed'])
+          .order('appointment_date', { ascending: true })
+          .order('appointment_time', { ascending: true });
+        
+        if (error) {
+          console.error('[Appointments] Error obteniendo citas:', error);
+          return res.status(500).json({ error: 'Error obteniendo citas', details: error.message });
+        }
+        
+        // Obtener información de pacientes para cada cita
+        const appointmentsWithPatients = await Promise.all((appointments || []).map(async (apt) => {
+          const { data: patient } = await supabase
+            .from('patients')
+            .select('name, document, email')
+            .eq('phone_number', apt.phone_number)
+            .single();
+          
+          return {
+            ...apt,
+            patient: patient || null
+          };
+        }));
+        
+        return res.status(200).json({
+          appointments: appointmentsWithPatients
+        });
+      }
+      
+      // Si hay phoneNumber, obtener citas de un paciente específico
       const phoneNumber = req.query.phoneNumber;
       
       if (!phoneNumber) {
-        return res.status(400).json({ error: 'Se requiere phoneNumber' });
+        return res.status(400).json({ error: 'Se requiere phoneNumber o startDate/endDate' });
       }
       
       // Obtener citas del paciente
