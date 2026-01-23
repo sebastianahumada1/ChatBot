@@ -138,11 +138,24 @@ export default async function handler(req, res) {
       'use strict';
       
       // Capturar y suprimir errores de Shadow DOM de extensiones (como Weava)
+      // Estos errores son de extensiones del navegador y no afectan nuestro código
       const originalError = window.onerror;
+      const originalConsoleError = console.error;
+      
+      // Suprimir errores de Shadow DOM en console.error
+      console.error = function(...args) {
+        const message = args.join(' ');
+        if (message.includes('attachShadow') || message.includes('Shadow root') || message.includes('Weava')) {
+          // Silenciar completamente estos errores de extensiones
+          return;
+        }
+        originalConsoleError.apply(console, args);
+      };
+      
+      // Suprimir errores de Shadow DOM en window.onerror
       window.onerror = function(msg, url, line, col, error) {
-        // Si es un error de Shadow DOM de extensiones, ignorarlo
-        if (msg && msg.includes('attachShadow') && msg.includes('Shadow root')) {
-          console.warn('[Calendario] Error de extensión del navegador ignorado:', msg);
+        // Si es un error de Shadow DOM de extensiones, ignorarlo completamente
+        if (msg && (msg.includes('attachShadow') || msg.includes('Shadow root') || msg.includes('Weava'))) {
           return true; // Prevenir que el error se propague
         }
         // Para otros errores, usar el manejador original si existe
@@ -154,11 +167,12 @@ export default async function handler(req, res) {
       
       // También capturar errores no manejados de Promise
       window.addEventListener('unhandledrejection', function(event) {
-        if (event.reason && event.reason.message && event.reason.message.includes('attachShadow')) {
-          console.warn('[Calendario] Error de Promise de extensión ignorado');
-          event.preventDefault();
+        const reason = event.reason;
+        const message = reason?.message || String(reason || '');
+        if (message.includes('attachShadow') || message.includes('Shadow root') || message.includes('Weava')) {
+          event.preventDefault(); // Suprimir el error
         }
-      });
+      }, true); // Usar capture phase para interceptar antes
       
       // Configuración de huso horario: Colombia (GMT-5)
       const TIMEZONE = 'America/Bogota';
