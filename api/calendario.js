@@ -479,33 +479,65 @@ export default async function handler(req, res) {
 
     // Renderizar vista de mes
     function renderMonthView() {
-      const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-      const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
       const startDate = new Date(firstDay);
       startDate.setDate(startDate.getDate() - startDate.getDay());
       
       const grid = document.getElementById('monthGrid');
       const days = [];
       
+      // Función auxiliar para crear string de fecha directamente sin conversión
+      function createDateString(y, m, d) {
+        const year = String(y).padStart(4, '0');
+        const month = String(m + 1).padStart(2, '0');
+        const day = String(d).padStart(2, '0');
+        return year + '-' + month + '-' + day;
+      }
+      
       // Días del mes anterior
-      const prevMonthLastDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0).getDate();
+      const prevMonthLastDay = new Date(year, month, 0).getDate();
+      const prevMonth = month - 1;
       for (let i = startDate.getDay(); i > 0; i--) {
-        days.push({ date: prevMonthLastDay - i + 1, isCurrentMonth: false, fullDate: new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, prevMonthLastDay - i + 1) });
+        const dayNum = prevMonthLastDay - i + 1;
+        const dateStr = createDateString(year, prevMonth, dayNum);
+        days.push({ 
+          date: dayNum, 
+          isCurrentMonth: false, 
+          fullDate: new Date(year, prevMonth, dayNum),
+          dateString: dateStr
+        });
       }
       
       // Días del mes actual
       for (let i = 1; i <= lastDay.getDate(); i++) {
-        days.push({ date: i, isCurrentMonth: true, fullDate: new Date(currentDate.getFullYear(), currentDate.getMonth(), i) });
+        const dateStr = createDateString(year, month, i);
+        days.push({ 
+          date: i, 
+          isCurrentMonth: true, 
+          fullDate: new Date(year, month, i),
+          dateString: dateStr
+        });
       }
       
       // Días del mes siguiente
       const remaining = 42 - days.length;
+      const nextMonth = month + 1;
       for (let i = 1; i <= remaining; i++) {
-        days.push({ date: i, isCurrentMonth: false, fullDate: new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, i) });
+        const dateStr = createDateString(year, nextMonth, i);
+        days.push({ 
+          date: i, 
+          isCurrentMonth: false, 
+          fullDate: new Date(year, nextMonth, i),
+          dateString: dateStr
+        });
       }
       
       grid.innerHTML = days.map(day => {
-        const dayStr = getColombiaDateString(day.fullDate);
+        // Usar dateString directamente en lugar de convertir fullDate
+        const dayStr = day.dateString || getColombiaDateString(day.fullDate);
         const dayAppointments = appointments.filter(apt => {
           const aptDateStr = getDateStringFromDB(apt.appointment_date);
           // Debug para la fecha problemática
