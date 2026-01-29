@@ -98,7 +98,7 @@ async function getDentalinkConfig() {
   // Fetch dentistas
   const dentistasResponse = await dentalinkRequest('/dentistas/');
   const dentistas = dentistasResponse?.data || [];
-  console.log(`[Dentalink] Dentistas fetched: ${dentistas.length}`, dentistas.map(d => ({ id: d.id, nombre: d.nombre, email: d.email })));
+  console.log(`[Dentalink] Dentistas fetched: ${dentistas.length}`, dentistas.map(d => ({ id: d.id, nombre: d.nombre, email: d.email, horarios_sucursal: d.horarios_sucursal })));
   
   // Create location mapping: name contains "Manzanares" -> manzanares, otherwise -> rodadero
   const locationMapping = {};
@@ -113,33 +113,45 @@ async function getDentalinkConfig() {
   });
   
   // Find default dentist (Dr. Albeiro Garcia)
-  let defaultDentistaId = null;
+  let defaultDentista = null;
   
   // First check environment variable
   if (process.env.DENTALINK_DEFAULT_DENTISTA_ID) {
-    defaultDentistaId = parseInt(process.env.DENTALINK_DEFAULT_DENTISTA_ID);
-    console.log(`[Dentalink] Using dentist ID from env: ${defaultDentistaId}`);
-  } else {
-    // Try to find by name
+    const envId = parseInt(process.env.DENTALINK_DEFAULT_DENTISTA_ID);
+    defaultDentista = dentistas.find(d => d.id === envId) || null;
+    if (defaultDentista) {
+      console.log(`[Dentalink] Using dentist from env: ${defaultDentista.nombre} (ID: ${defaultDentista.id})`);
+    }
+  }
+  
+  // Try to find by name if not found by env
+  if (!defaultDentista) {
     for (const dentista of dentistas) {
       const nombre = (dentista.nombre || '').toLowerCase();
       const email = (dentista.email || '').toLowerCase();
       if (nombre.includes('albeiro') || email.includes('albeiro') || email.includes('dralbeirogarcia')) {
-        defaultDentistaId = dentista.id;
+        defaultDentista = dentista;
         console.log(`[Dentalink] Default dentist found by name: ${dentista.nombre} (ID: ${dentista.id})`);
         break;
       }
     }
-    
-    // If not found by name, use the first one
-    if (!defaultDentistaId && dentistas.length > 0) {
-      defaultDentistaId = dentistas[0].id;
-      console.log(`[Dentalink] Using first dentist as default: ID ${defaultDentistaId}`);
-    }
   }
   
-  if (!defaultDentistaId) {
-    console.warn('[Dentalink] WARNING: No dentista ID available. Agendas endpoint will not work.');
+  // If not found by name, use the first one
+  if (!defaultDentista && dentistas.length > 0) {
+    defaultDentista = dentistas[0];
+    console.log(`[Dentalink] Using first dentist as default: ID ${defaultDentista.id}`);
+  }
+  
+  // Get the sucursales where the dentist has schedules
+  let dentistaSucursales = [];
+  if (defaultDentista && defaultDentista.horarios_sucursal) {
+    dentistaSucursales = defaultDentista.horarios_sucursal.map(id => parseInt(id));
+    console.log(`[Dentalink] Dentist has schedules in sucursales: ${dentistaSucursales.join(', ')}`);
+  }
+  
+  if (!defaultDentista) {
+    console.warn('[Dentalink] WARNING: No dentista available. Agendas endpoint will not work.');
   }
   
   dentalinkConfig = {
@@ -147,11 +159,13 @@ async function getDentalinkConfig() {
     dentistas,
     locationMapping,        // { sucursalId: 'rodadero' | 'manzanares' }
     sucursalIdMapping,      // { 'rodadero': sucursalId, 'manzanares': sucursalId }
-    defaultDentistaId
+    defaultDentistaId: defaultDentista?.id || null,
+    defaultDentista,        // Full dentist object
+    dentistaSucursales      // Array of sucursal IDs where dentist has schedules
   };
   
   dentalinkConfigLastFetch = Date.now();
-  console.log(`[Dentalink] Config loaded: ${sucursales.length} sucursales, ${dentistas.length} dentistas, defaultDentistaId: ${defaultDentistaId}`);
+  console.log(`[Dentalink] Config loaded: ${sucursales.length} sucursales, ${dentistas.length} dentistas, defaultDentistaId: ${defaultDentista?.id}, dentistaSucursales: [${dentistaSucursales.join(', ')}]`);
   
   return dentalinkConfig;
 }
@@ -257,7 +271,7 @@ async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) 
     return [];
   }
   
-  console.log(`[Dentalink] Querying slots with dentistaId: ${config.defaultDentistaId}, sucursales: ${JSON.stringify(config.sucursalIdMapping)}`);
+  console.log(`[Dentalink] Querying slots with dentistaId: ${config.defaultDentistaId}, dentistaSucursales: [${config.dentistaSucursales.join(', ')}]`);
   
   const slots = [];
   const startDate = new Date(date);
@@ -276,6 +290,12 @@ async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) 
     for (const loc of locationsToQuery) {
       const sucursalId = config.sucursalIdMapping[loc];
       if (!sucursalId) continue;
+      
+      // IMPORTANT: Only query if the dentist has schedules configured for this sucursal
+      if (!config.dentistaSucursales.includes(sucursalId)) {
+        console.log(`[Dentalink] Skipping sucursal ${sucursalId} (${loc}) - dentist has no schedule there`);
+        continue;
+      }
       
       const params = {
         id_sucursal: sucursalId,
@@ -322,9 +342,9 @@ async function createDentalinkAppointment(appointmentData) {
   
   const sucursalId = config.sucursalIdMapping[location] || Object.values(config.sucursalIdMapping)[0];
   
+  // Build appointment body - only include dentist if they have schedule at this sucursal
   const body = {
     id_paciente: patientId,
-    id_dentista: config.defaultDentistaId,
     id_sucursal: sucursalId,
     id_estado: 7, // "No confirmado"
     id_sillon: 1, // Default chair
@@ -333,6 +353,14 @@ async function createDentalinkAppointment(appointmentData) {
     duracion: 30,
     comentario: service || 'Cita agendada via WhatsApp'
   };
+  
+  // Only add dentist if they have a schedule at this sucursal
+  if (config.defaultDentistaId && config.dentistaSucursales.includes(sucursalId)) {
+    body.id_dentista = config.defaultDentistaId;
+    console.log(`[Dentalink] Including dentist ${config.defaultDentistaId} for sucursal ${sucursalId}`);
+  } else {
+    console.log(`[Dentalink] Creating appointment WITHOUT dentist for sucursal ${sucursalId} (dentist has no schedule there)`);
+  }
   
   console.log(`[Dentalink] Creating appointment: ${date} ${time} at ${location}`);
   const response = await dentalinkRequest('/citas/', 'POST', body);
