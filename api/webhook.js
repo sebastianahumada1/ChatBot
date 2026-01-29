@@ -93,38 +93,53 @@ async function getDentalinkConfig() {
   // Fetch sucursales
   const sucursalesResponse = await dentalinkRequest('/sucursales/');
   const sucursales = sucursalesResponse?.data || [];
+  console.log(`[Dentalink] Sucursales fetched: ${sucursales.length}`, sucursales.map(s => ({ id: s.id, nombre: s.nombre })));
   
   // Fetch dentistas
   const dentistasResponse = await dentalinkRequest('/dentistas/');
   const dentistas = dentistasResponse?.data || [];
+  console.log(`[Dentalink] Dentistas fetched: ${dentistas.length}`, dentistas.map(d => ({ id: d.id, nombre: d.nombre, email: d.email })));
   
   // Create location mapping: name contains "Manzanares" -> manzanares, otherwise -> rodadero
   const locationMapping = {};
   const sucursalIdMapping = {};
   
   sucursales.forEach(sucursal => {
-    const isManazanres = sucursal.nombre.toLowerCase().includes('manzanares');
-    const locationKey = isManazanres ? 'manzanares' : 'rodadero';
+    const isManzanares = sucursal.nombre.toLowerCase().includes('manzanares');
+    const locationKey = isManzanares ? 'manzanares' : 'rodadero';
     locationMapping[sucursal.id] = locationKey;
     sucursalIdMapping[locationKey] = sucursal.id;
+    console.log(`[Dentalink] Sucursal mapping: ${sucursal.id} (${sucursal.nombre}) -> ${locationKey}`);
   });
   
   // Find default dentist (Dr. Albeiro Garcia)
   let defaultDentistaId = null;
-  for (const dentista of dentistas) {
-    const nombre = (dentista.nombre || '').toLowerCase();
-    const email = (dentista.email || '').toLowerCase();
-    if (nombre.includes('albeiro') || email.includes('albeiro') || email.includes('dralbeirogarcia')) {
-      defaultDentistaId = dentista.id;
-      console.log(`[Dentalink] Default dentist found: ${dentista.nombre} (ID: ${dentista.id})`);
-      break;
+  
+  // First check environment variable
+  if (process.env.DENTALINK_DEFAULT_DENTISTA_ID) {
+    defaultDentistaId = parseInt(process.env.DENTALINK_DEFAULT_DENTISTA_ID);
+    console.log(`[Dentalink] Using dentist ID from env: ${defaultDentistaId}`);
+  } else {
+    // Try to find by name
+    for (const dentista of dentistas) {
+      const nombre = (dentista.nombre || '').toLowerCase();
+      const email = (dentista.email || '').toLowerCase();
+      if (nombre.includes('albeiro') || email.includes('albeiro') || email.includes('dralbeirogarcia')) {
+        defaultDentistaId = dentista.id;
+        console.log(`[Dentalink] Default dentist found by name: ${dentista.nombre} (ID: ${dentista.id})`);
+        break;
+      }
+    }
+    
+    // If not found by name, use the first one
+    if (!defaultDentistaId && dentistas.length > 0) {
+      defaultDentistaId = dentistas[0].id;
+      console.log(`[Dentalink] Using first dentist as default: ID ${defaultDentistaId}`);
     }
   }
   
-  // If not found by name, use the first one or env variable
-  if (!defaultDentistaId && dentistas.length > 0) {
-    defaultDentistaId = process.env.DENTALINK_DEFAULT_DENTISTA_ID || dentistas[0].id;
-    console.log(`[Dentalink] Using fallback dentist ID: ${defaultDentistaId}`);
+  if (!defaultDentistaId) {
+    console.warn('[Dentalink] WARNING: No dentista ID available. Agendas endpoint will not work.');
   }
   
   dentalinkConfig = {
@@ -136,7 +151,7 @@ async function getDentalinkConfig() {
   };
   
   dentalinkConfigLastFetch = Date.now();
-  console.log(`[Dentalink] Config loaded: ${sucursales.length} sucursales, ${dentistas.length} dentistas`);
+  console.log(`[Dentalink] Config loaded: ${sucursales.length} sucursales, ${dentistas.length} dentistas, defaultDentistaId: ${defaultDentistaId}`);
   
   return dentalinkConfig;
 }
@@ -230,6 +245,20 @@ async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) 
     return [];
   }
   
+  // Check if we have a valid dentista ID
+  if (!config.defaultDentistaId) {
+    console.warn('[Dentalink] No dentista ID configured, cannot query agendas');
+    return [];
+  }
+  
+  // Check if we have sucursales
+  if (Object.keys(config.sucursalIdMapping).length === 0) {
+    console.warn('[Dentalink] No sucursales configured, cannot query agendas');
+    return [];
+  }
+  
+  console.log(`[Dentalink] Querying slots with dentistaId: ${config.defaultDentistaId}, sucursales: ${JSON.stringify(config.sucursalIdMapping)}`);
+  
   const slots = [];
   const startDate = new Date(date);
   
@@ -255,9 +284,11 @@ async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) 
         id_dentista: config.defaultDentistaId
       };
       
+      console.log(`[Dentalink] Querying agendas: ${JSON.stringify(params)}`);
       const response = await dentalinkRequest(`/agendas/?q=${encodeURIComponent(JSON.stringify(params))}`);
       
       if (response?.data) {
+        console.log(`[Dentalink] Got ${response.data.length} slots for ${dateStr} at ${loc}`);
         // Filter available slots (id_paciente === 0 means available)
         const availableSlots = response.data.filter(slot => slot.id_paciente === 0);
         
@@ -275,7 +306,7 @@ async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) 
     }
   }
   
-  console.log(`[Dentalink] Found ${slots.length} available slots`);
+  console.log(`[Dentalink] Found ${slots.length} available slots total`);
   return slots;
 }
 
