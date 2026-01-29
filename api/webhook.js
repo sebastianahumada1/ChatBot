@@ -13,6 +13,15 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 // ID del número de teléfono de WhatsApp Business
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '976313762231753';
 
+// ==================== DENTALINK API CONFIGURATION ====================
+const DENTALINK_API_URL = 'https://api.dentalink.healthatom.com/api/v1';
+const DENTALINK_API_TOKEN = process.env.DENTALINK_API_TOKEN || '';
+
+// Cache para configuración de Dentalink (sucursales, dentistas)
+let dentalinkConfig = null;
+let dentalinkConfigLastFetch = null;
+const DENTALINK_CONFIG_CACHE_TTL = 3600000; // 1 hora
+
 // Cliente Supabase
 let supabaseClient = null;
 
@@ -30,6 +39,298 @@ function getSupabaseClient() {
   }
   return supabaseClient;
 }
+
+// ==================== DENTALINK API HELPER FUNCTIONS ====================
+
+// Generic Dentalink API request
+async function dentalinkRequest(endpoint, method = 'GET', body = null) {
+  if (!DENTALINK_API_TOKEN) {
+    console.warn('[Dentalink] DENTALINK_API_TOKEN no configurado');
+    return null;
+  }
+  
+  try {
+    const url = `${DENTALINK_API_URL}${endpoint}`;
+    const options = {
+      method,
+      headers: {
+        'Authorization': `Token ${DENTALINK_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    if (body && (method === 'POST' || method === 'PUT')) {
+      options.body = JSON.stringify(body);
+    }
+    
+    console.log(`[Dentalink] ${method} ${endpoint}`);
+    const response = await fetch(url, options);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Dentalink] Error ${response.status}: ${errorText}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('[Dentalink] Error en request:', error);
+    return null;
+  }
+}
+
+// Fetch and cache Dentalink configuration (sucursales, dentistas)
+async function getDentalinkConfig() {
+  // Return cached config if still valid
+  if (dentalinkConfig && dentalinkConfigLastFetch && 
+      (Date.now() - dentalinkConfigLastFetch) < DENTALINK_CONFIG_CACHE_TTL) {
+    return dentalinkConfig;
+  }
+  
+  console.log('[Dentalink] Fetching configuration (sucursales, dentistas)...');
+  
+  // Fetch sucursales
+  const sucursalesResponse = await dentalinkRequest('/sucursales/');
+  const sucursales = sucursalesResponse?.data || [];
+  
+  // Fetch dentistas
+  const dentistasResponse = await dentalinkRequest('/dentistas/');
+  const dentistas = dentistasResponse?.data || [];
+  
+  // Create location mapping: name contains "Manzanares" -> manzanares, otherwise -> rodadero
+  const locationMapping = {};
+  const sucursalIdMapping = {};
+  
+  sucursales.forEach(sucursal => {
+    const isManazanres = sucursal.nombre.toLowerCase().includes('manzanares');
+    const locationKey = isManazanres ? 'manzanares' : 'rodadero';
+    locationMapping[sucursal.id] = locationKey;
+    sucursalIdMapping[locationKey] = sucursal.id;
+  });
+  
+  // Find default dentist (Dr. Albeiro Garcia)
+  let defaultDentistaId = null;
+  for (const dentista of dentistas) {
+    const nombre = (dentista.nombre || '').toLowerCase();
+    const email = (dentista.email || '').toLowerCase();
+    if (nombre.includes('albeiro') || email.includes('albeiro') || email.includes('dralbeirogarcia')) {
+      defaultDentistaId = dentista.id;
+      console.log(`[Dentalink] Default dentist found: ${dentista.nombre} (ID: ${dentista.id})`);
+      break;
+    }
+  }
+  
+  // If not found by name, use the first one or env variable
+  if (!defaultDentistaId && dentistas.length > 0) {
+    defaultDentistaId = process.env.DENTALINK_DEFAULT_DENTISTA_ID || dentistas[0].id;
+    console.log(`[Dentalink] Using fallback dentist ID: ${defaultDentistaId}`);
+  }
+  
+  dentalinkConfig = {
+    sucursales,
+    dentistas,
+    locationMapping,        // { sucursalId: 'rodadero' | 'manzanares' }
+    sucursalIdMapping,      // { 'rodadero': sucursalId, 'manzanares': sucursalId }
+    defaultDentistaId
+  };
+  
+  dentalinkConfigLastFetch = Date.now();
+  console.log(`[Dentalink] Config loaded: ${sucursales.length} sucursales, ${dentistas.length} dentistas`);
+  
+  return dentalinkConfig;
+}
+
+// Search patient in Dentalink by phone (celular)
+async function searchDentalinkPatientByPhone(phone) {
+  // Format phone number - remove country code prefix if present
+  let celular = phone;
+  if (celular.startsWith('57')) {
+    celular = celular.substring(2); // Remove Colombia country code
+  }
+  
+  const params = { celular };
+  const response = await dentalinkRequest(`/pacientes/?q=${encodeURIComponent(JSON.stringify(params))}`);
+  
+  if (response?.data && response.data.length > 0) {
+    console.log(`[Dentalink] Patient found by phone ${phone}: ID ${response.data[0].id}`);
+    return response.data[0];
+  }
+  
+  // Also try with full number including country code
+  const paramsWithCode = { celular: phone };
+  const responseWithCode = await dentalinkRequest(`/pacientes/?q=${encodeURIComponent(JSON.stringify(paramsWithCode))}`);
+  
+  if (responseWithCode?.data && responseWithCode.data.length > 0) {
+    console.log(`[Dentalink] Patient found by full phone ${phone}: ID ${responseWithCode.data[0].id}`);
+    return responseWithCode.data[0];
+  }
+  
+  return null;
+}
+
+// Search patient in Dentalink by name
+async function searchDentalinkPatientByName(name) {
+  if (!name) return null;
+  
+  const params = { nombre: name };
+  const response = await dentalinkRequest(`/pacientes/?q=${encodeURIComponent(JSON.stringify(params))}`);
+  
+  if (response?.data && response.data.length > 0) {
+    console.log(`[Dentalink] Patient found by name "${name}": ID ${response.data[0].id}`);
+    return response.data[0];
+  }
+  
+  return null;
+}
+
+// Create patient in Dentalink
+async function createDentalinkPatient(patientData) {
+  const { name, phone, email } = patientData;
+  
+  if (!name) {
+    console.warn('[Dentalink] Cannot create patient without name');
+    return null;
+  }
+  
+  // Split name into nombre and apellidos
+  const nameParts = name.trim().split(' ');
+  const nombre = nameParts[0] || 'Sin nombre';
+  const apellidos = nameParts.slice(1).join(' ') || 'Sin apellido';
+  
+  // Format phone
+  let celular = phone || '';
+  if (celular.startsWith('57')) {
+    celular = celular.substring(2);
+  }
+  
+  const body = {
+    nombre,
+    apellidos,
+    celular,
+    email: email || ''
+  };
+  
+  console.log(`[Dentalink] Creating patient: ${nombre} ${apellidos}`);
+  const response = await dentalinkRequest('/pacientes/', 'POST', body);
+  
+  if (response?.data) {
+    console.log(`[Dentalink] Patient created: ID ${response.data.id}`);
+    return response.data;
+  }
+  
+  return null;
+}
+
+// Get available slots from Dentalink for a specific date and location
+async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) {
+  const config = await getDentalinkConfig();
+  if (!config) {
+    console.warn('[Dentalink] Config not available');
+    return [];
+  }
+  
+  const slots = [];
+  const startDate = new Date(date);
+  
+  // Query for each day in the range
+  for (let i = 0; i < daysAhead; i++) {
+    const currentDate = new Date(startDate);
+    currentDate.setDate(startDate.getDate() + i);
+    const dateStr = currentDate.toISOString().split('T')[0];
+    
+    // Query for each location (or specific location if provided)
+    const locationsToQuery = location 
+      ? [location] 
+      : Object.keys(config.sucursalIdMapping);
+    
+    for (const loc of locationsToQuery) {
+      const sucursalId = config.sucursalIdMapping[loc];
+      if (!sucursalId) continue;
+      
+      const params = {
+        id_sucursal: sucursalId,
+        fecha: dateStr,
+        duracion: 30, // 30 minutes default
+        id_dentista: config.defaultDentistaId
+      };
+      
+      const response = await dentalinkRequest(`/agendas/?q=${encodeURIComponent(JSON.stringify(params))}`);
+      
+      if (response?.data) {
+        // Filter available slots (id_paciente === 0 means available)
+        const availableSlots = response.data.filter(slot => slot.id_paciente === 0);
+        
+        availableSlots.forEach(slot => {
+          slots.push({
+            date: dateStr,
+            time: slot.hora_inicio.substring(0, 5), // "09:00" format
+            location: loc,
+            dentistaId: slot.id_dentista,
+            dentistaNombre: slot.nombre_dentista,
+            sucursalId: sucursalId
+          });
+        });
+      }
+    }
+  }
+  
+  console.log(`[Dentalink] Found ${slots.length} available slots`);
+  return slots;
+}
+
+// Create appointment in Dentalink
+async function createDentalinkAppointment(appointmentData) {
+  const { patientId, date, time, location, service } = appointmentData;
+  
+  const config = await getDentalinkConfig();
+  if (!config) {
+    console.warn('[Dentalink] Config not available');
+    return null;
+  }
+  
+  const sucursalId = config.sucursalIdMapping[location] || Object.values(config.sucursalIdMapping)[0];
+  
+  const body = {
+    id_paciente: patientId,
+    id_dentista: config.defaultDentistaId,
+    id_sucursal: sucursalId,
+    id_estado: 7, // "No confirmado"
+    id_sillon: 1, // Default chair
+    fecha: date,
+    hora_inicio: time,
+    duracion: 30,
+    comentario: service || 'Cita agendada via WhatsApp'
+  };
+  
+  console.log(`[Dentalink] Creating appointment: ${date} ${time} at ${location}`);
+  const response = await dentalinkRequest('/citas/', 'POST', body);
+  
+  if (response?.data) {
+    console.log(`[Dentalink] Appointment created: ID ${response.data.id}`);
+    return response.data;
+  }
+  
+  return null;
+}
+
+// Get appointments from Dentalink for a date range
+async function getDentalinkAppointments(startDate, endDate) {
+  const params = {
+    fecha: { gte: startDate, lte: endDate }
+  };
+  
+  const response = await dentalinkRequest(`/citas/?q=${encodeURIComponent(JSON.stringify(params))}`);
+  
+  if (response?.data) {
+    console.log(`[Dentalink] Found ${response.data.length} appointments`);
+    return response.data;
+  }
+  
+  return [];
+}
+
+// ==================== END DENTALINK API FUNCTIONS ====================
 
 // Guardar mensaje en Supabase
 async function saveMessage(phoneNumber, role, content, messageId = null) {
@@ -168,7 +469,7 @@ async function getPatientByPhone(phoneNumber) {
   }
 }
 
-// Crear o actualizar un paciente
+// Crear o actualizar un paciente (sync with Supabase and Dentalink)
 async function createOrUpdatePatient(phoneNumber, patientData) {
   try {
     const supabase = getSupabaseClient();
@@ -179,7 +480,7 @@ async function createOrUpdatePatient(phoneNumber, patientData) {
     
     const { name, document, email } = patientData;
     
-    // Verificar si el paciente ya existe
+    // Verificar si el paciente ya existe en Supabase
     const existingPatient = await getPatientByPhone(phoneNumber);
     
     if (existingPatient) {
@@ -213,7 +514,7 @@ async function createOrUpdatePatient(phoneNumber, patientData) {
         return existingPatient;
       }
     } else {
-      // Crear nuevo paciente
+      // Crear nuevo paciente en Supabase
       const { data, error } = await supabase
         .from('patients')
         .insert({
@@ -235,6 +536,74 @@ async function createOrUpdatePatient(phoneNumber, patientData) {
     }
   } catch (error) {
     console.error('[Chatbot] Error creando/actualizando paciente:', error);
+    return null;
+  }
+}
+
+// Ensure patient exists in Dentalink and sync IDs
+async function ensureDentalinkPatient(phoneNumber, patientData) {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    
+    const { name, email } = patientData;
+    
+    // Get local patient
+    const localPatient = await getPatientByPhone(phoneNumber);
+    
+    // If already has Dentalink ID, return it
+    if (localPatient?.dentalink_patient_id) {
+      console.log(`[Chatbot] Patient already has Dentalink ID: ${localPatient.dentalink_patient_id}`);
+      return localPatient.dentalink_patient_id;
+    }
+    
+    // Search in Dentalink by phone
+    let dentalinkPatient = await searchDentalinkPatientByPhone(phoneNumber);
+    
+    // If not found by phone, search by name
+    if (!dentalinkPatient && name) {
+      dentalinkPatient = await searchDentalinkPatientByName(name);
+    }
+    
+    // If still not found, create in Dentalink
+    if (!dentalinkPatient) {
+      if (!name) {
+        console.warn('[Chatbot] Cannot create Dentalink patient without name');
+        return null;
+      }
+      
+      dentalinkPatient = await createDentalinkPatient({
+        name,
+        phone: phoneNumber,
+        email
+      });
+    }
+    
+    if (!dentalinkPatient) {
+      console.error('[Chatbot] Failed to ensure Dentalink patient');
+      return null;
+    }
+    
+    // Update local patient with Dentalink ID
+    if (localPatient) {
+      const { error } = await supabase
+        .from('patients')
+        .update({ 
+          dentalink_patient_id: dentalinkPatient.id,
+          updated_at: getColombiaDate().toISOString()
+        })
+        .eq('phone_number', phoneNumber);
+      
+      if (error) {
+        console.error('[Chatbot] Error updating dentalink_patient_id:', error);
+      } else {
+        console.log(`[Chatbot] ✓ Synced Dentalink ID ${dentalinkPatient.id} for ${phoneNumber}`);
+      }
+    }
+    
+    return dentalinkPatient.id;
+  } catch (error) {
+    console.error('[Chatbot] Error ensuring Dentalink patient:', error);
     return null;
   }
 }
@@ -403,14 +772,19 @@ function generateAvailableSlots(businessHours, startDate, daysAhead = 30) {
   return slots;
 }
 
-// Consultar slots disponibles para una fecha y ubicación
+// Consultar slots disponibles para una fecha y ubicación (using Dentalink API)
 async function getAvailableSlots(date, location = null, daysAhead = 7) {
   try {
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.warn('[Chatbot] Supabase no disponible para consultar slots');
-      return [];
+    // Use Dentalink API to get available slots
+    const slots = await getDentalinkAvailableSlots(date, location, daysAhead);
+    
+    if (slots && slots.length > 0) {
+      console.log(`[Chatbot] Slots disponibles desde Dentalink: ${slots.length}`);
+      return slots;
     }
+    
+    // Fallback to local generation if Dentalink fails or returns empty
+    console.warn('[Chatbot] Dentalink no disponible, usando generación local de slots');
     
     // Obtener horarios de negocio del prompt
     const botPrompt = await getBotPrompt();
@@ -425,169 +799,141 @@ async function getAvailableSlots(date, location = null, daysAhead = 7) {
       filteredSlots = allSlots.filter(slot => slot.location === location);
     }
     
-    // Obtener citas ocupadas para el rango de fechas
-    const startDate = toColombiaDate(date);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(startDate);
-    endDate.setDate(startDate.getDate() + daysAhead);
-    
-    const { data: occupiedAppointments, error } = await supabase
-      .from('appointments')
-      .select('appointment_date, appointment_time, location')
-      .gte('appointment_date', startDate.toISOString().split('T')[0])
-      .lte('appointment_date', endDate.toISOString().split('T')[0])
-      .in('status', ['scheduled', 'confirmed'])
-      .order('appointment_date', { ascending: true })
-      .order('appointment_time', { ascending: true });
-    
-    if (error) {
-      console.error('[Chatbot] Error obteniendo citas ocupadas:', error);
-      return filteredSlots; // Retornar todos los slots si hay error
-    }
-    
-    // Crear set de slots ocupados para búsqueda rápida
-    const occupiedSlots = new Set();
-    if (occupiedAppointments) {
-      occupiedAppointments.forEach(apt => {
-        occupiedSlots.add(`${apt.appointment_date}|${apt.appointment_time}|${apt.location}`);
-      });
-    }
-    
-    // Filtrar slots disponibles (no ocupados)
-    const availableSlots = filteredSlots.filter(slot => {
-      const slotKey = `${slot.date}|${slot.time}|${slot.location}`;
-      return !occupiedSlots.has(slotKey);
-    });
-    
-    console.log(`[Chatbot] Slots disponibles encontrados: ${availableSlots.length} de ${filteredSlots.length}`);
-    return availableSlots;
+    console.log(`[Chatbot] Slots generados localmente: ${filteredSlots.length}`);
+    return filteredSlots;
   } catch (error) {
     console.error('[Chatbot] Error consultando slots disponibles:', error);
     return [];
   }
 }
 
-// Crear/reservar una cita
+// Crear/reservar una cita (using Dentalink API)
 async function createAppointment(phoneNumber, appointmentData) {
   try {
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.warn('[Chatbot] Supabase no disponible para crear cita');
-      return null;
-    }
-    
     const { date, time, location, service, notes } = appointmentData;
     
-    // Obtener o crear paciente
+    // Obtener paciente local
     const patient = await getPatientByPhone(phoneNumber);
     if (!patient) {
       console.warn(`[Chatbot] Paciente no encontrado para ${phoneNumber}`);
       return null;
     }
     
-    // Verificar que el slot esté disponible
-    const availableSlots = await getAvailableSlots(date, location, 1);
-    const slotKey = `${date}|${time}|${location}`;
-    const isAvailable = availableSlots.some(slot => 
-      `${slot.date}|${slot.time}|${slot.location}` === slotKey
-    );
+    // Ensure patient exists in Dentalink and get their ID
+    const dentalinkPatientId = await ensureDentalinkPatient(phoneNumber, {
+      name: patient.name,
+      email: patient.email
+    });
     
-    if (!isAvailable) {
-      console.warn(`[Chatbot] Slot no disponible: ${slotKey}`);
-      return { error: 'Slot no disponible' };
+    if (!dentalinkPatientId) {
+      console.error('[Chatbot] No se pudo obtener/crear paciente en Dentalink');
+      return { error: 'No se pudo vincular paciente con Dentalink' };
     }
     
-    // Crear la cita
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert({
-        patient_id: patient.id,
-        phone_number: phoneNumber,
-        appointment_date: date,
-        appointment_time: time,
-        location: location || 'rodadero',
-        service: service || null,
-        status: 'scheduled',
-        notes: notes || null
-      })
-      .select()
-      .single();
+    // Create appointment in Dentalink
+    const dentalinkAppointment = await createDentalinkAppointment({
+      patientId: dentalinkPatientId,
+      date,
+      time,
+      location: location || 'rodadero',
+      service: service || notes || 'Cita agendada via WhatsApp'
+    });
     
-    if (error) {
-      // Si es error de constraint único, el slot ya está ocupado
-      if (error.code === '23505') {
-        console.warn(`[Chatbot] Slot ya ocupado: ${slotKey}`);
-        return { error: 'Slot ya ocupado' };
-      }
-      console.error('[Chatbot] Error creando cita:', error);
-      return null;
+    if (!dentalinkAppointment) {
+      console.error('[Chatbot] Error creando cita en Dentalink');
+      return { error: 'Error al crear cita en Dentalink' };
     }
     
-    console.log(`[Chatbot] ✓ Cita creada: ${date} ${time} en ${location} para ${phoneNumber}`);
-    return data;
+    console.log(`[Chatbot] ✓ Cita creada en Dentalink: ${date} ${time} en ${location} para ${phoneNumber}`);
+    
+    // Return appointment data in a compatible format
+    return {
+      id: dentalinkAppointment.id,
+      phone_number: phoneNumber,
+      appointment_date: date,
+      appointment_time: time,
+      location: location || 'rodadero',
+      service: service,
+      status: dentalinkAppointment.estado_cita || 'scheduled',
+      dentalink_id: dentalinkAppointment.id,
+      patient_name: dentalinkAppointment.nombre_paciente
+    };
   } catch (error) {
     console.error('[Chatbot] Error creando cita:', error);
     return null;
   }
 }
 
-// Obtener citas de un paciente
+// Obtener citas de un paciente (from Dentalink)
 async function getPatientAppointments(phoneNumber, status = null) {
   try {
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.warn('[Chatbot] Supabase no disponible para consultar citas');
-      return [];
+    // Get patient from local DB
+    const patient = await getPatientByPhone(phoneNumber);
+    if (!patient?.dentalink_patient_id) {
+      console.log('[Chatbot] Patient has no Dentalink ID, searching...');
+      // Try to find patient in Dentalink by phone
+      const dentalinkPatient = await searchDentalinkPatientByPhone(phoneNumber);
+      if (!dentalinkPatient) {
+        return [];
+      }
+      // Get appointments for this Dentalink patient
+      const response = await dentalinkRequest(`/pacientes/${dentalinkPatient.id}/citas`);
+      if (!response?.data) return [];
+      
+      // Map to local format
+      const config = await getDentalinkConfig();
+      return response.data.map(cita => ({
+        id: cita.id,
+        appointment_date: cita.fecha,
+        appointment_time: cita.hora_inicio.substring(0, 5),
+        location: config.locationMapping[cita.id_sucursal] || 'rodadero',
+        service: cita.nombre_tratamiento,
+        status: mapDentalinkStatus(cita.id_estado),
+        dentalink_id: cita.id
+      })).filter(apt => !status || apt.status === status);
     }
     
-    let query = supabase
-      .from('appointments')
-      .select('*')
-      .eq('phone_number', phoneNumber)
-      .order('appointment_date', { ascending: true })
-      .order('appointment_time', { ascending: true });
+    // Get appointments from Dentalink
+    const response = await dentalinkRequest(`/pacientes/${patient.dentalink_patient_id}/citas`);
+    if (!response?.data) return [];
     
-    if (status) {
-      query = query.eq('status', status);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) {
-      console.error('[Chatbot] Error obteniendo citas del paciente:', error);
-      return [];
-    }
-    
-    return data || [];
+    // Map to local format
+    const config = await getDentalinkConfig();
+    return response.data.map(cita => ({
+      id: cita.id,
+      appointment_date: cita.fecha,
+      appointment_time: cita.hora_inicio.substring(0, 5),
+      location: config.locationMapping[cita.id_sucursal] || 'rodadero',
+      service: cita.nombre_tratamiento,
+      status: mapDentalinkStatus(cita.id_estado),
+      dentalink_id: cita.id
+    })).filter(apt => !status || apt.status === status);
   } catch (error) {
     console.error('[Chatbot] Error obteniendo citas del paciente:', error);
     return [];
   }
 }
 
-// Modificar/reagendar una cita
+// Map Dentalink status to local status
+function mapDentalinkStatus(idEstado) {
+  const statusMap = {
+    1: 'cancelled',      // Anulado
+    2: 'confirmed',      // Confirmado
+    3: 'completed',      // Atendido
+    4: 'scheduled',      // Agendado
+    5: 'no_show',        // No asistió
+    6: 'waiting',        // En espera
+    7: 'scheduled',      // No confirmado
+    8: 'rescheduled'     // Reagendado
+  };
+  return statusMap[idEstado] || 'scheduled';
+}
+
+// Modificar/reagendar una cita (in Dentalink)
 async function rescheduleAppointment(appointmentId, newDate, newTime, newLocation = null) {
   try {
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.warn('[Chatbot] Supabase no disponible para reagendar cita');
-      return null;
-    }
-    
-    // Obtener la cita actual
-    const { data: currentAppointment, error: fetchError } = await supabase
-      .from('appointments')
-      .select('*')
-      .eq('id', appointmentId)
-      .single();
-    
-    if (fetchError || !currentAppointment) {
-      console.error('[Chatbot] Cita no encontrada:', appointmentId);
-      return null;
-    }
-    
     // Verificar que el nuevo slot esté disponible
-    const location = newLocation || currentAppointment.location;
+    const location = newLocation || 'rodadero';
     const availableSlots = await getAvailableSlots(newDate, location, 1);
     const slotKey = `${newDate}|${newTime}|${location}`;
     const isAvailable = availableSlots.some(slot => 
@@ -599,67 +945,61 @@ async function rescheduleAppointment(appointmentId, newDate, newTime, newLocatio
       return { error: 'Nuevo slot no disponible' };
     }
     
-    // Liberar el slot anterior (marcar como rescheduled)
-    await supabase
-      .from('appointments')
-      .update({ status: 'rescheduled' })
-      .eq('id', appointmentId);
+    // Get Dentalink config for sucursal mapping
+    const config = await getDentalinkConfig();
+    const sucursalId = config.sucursalIdMapping[location] || Object.values(config.sucursalIdMapping)[0];
     
-    // Crear nueva cita con los nuevos datos
-    const { data: newAppointment, error: createError } = await supabase
-      .from('appointments')
-      .insert({
-        patient_id: currentAppointment.patient_id,
-        phone_number: currentAppointment.phone_number,
-        appointment_date: newDate,
-        appointment_time: newTime,
-        location: location,
-        service: currentAppointment.service,
-        status: 'scheduled',
-        notes: currentAppointment.notes || `Reagendada desde ${currentAppointment.appointment_date} ${currentAppointment.appointment_time}`
-      })
-      .select()
-      .single();
+    // Update appointment in Dentalink using PUT
+    const updateBody = {
+      fecha: newDate,
+      hora_inicio: newTime,
+      id_sucursal: sucursalId,
+      id_estado: 8 // Reagendado
+    };
     
-    if (createError) {
-      console.error('[Chatbot] Error creando nueva cita:', createError);
-      return null;
+    const response = await dentalinkRequest(`/citas/${appointmentId}`, 'PUT', updateBody);
+    
+    if (!response?.data) {
+      console.error('[Chatbot] Error reagendando cita en Dentalink');
+      return { error: 'Error al reagendar cita en Dentalink' };
     }
     
-    console.log(`[Chatbot] ✓ Cita reagendada: ${appointmentId} -> ${newAppointment.id}`);
-    return newAppointment;
+    console.log(`[Chatbot] ✓ Cita reagendada en Dentalink: ${appointmentId}`);
+    return {
+      id: response.data.id,
+      appointment_date: newDate,
+      appointment_time: newTime,
+      location: location,
+      status: 'rescheduled',
+      dentalink_id: response.data.id
+    };
   } catch (error) {
     console.error('[Chatbot] Error reagendando cita:', error);
     return null;
   }
 }
 
-// Cancelar una cita
+// Cancelar una cita (in Dentalink)
 async function cancelAppointment(appointmentId) {
   try {
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.warn('[Chatbot] Supabase no disponible para cancelar cita');
+    // Update appointment status to cancelled (id_estado = 1) in Dentalink
+    const updateBody = {
+      id_estado: 1 // Anulado
+    };
+    
+    const response = await dentalinkRequest(`/citas/${appointmentId}`, 'PUT', updateBody);
+    
+    if (!response?.data) {
+      console.error('[Chatbot] Error cancelando cita en Dentalink');
       return null;
     }
     
-    const { data, error } = await supabase
-      .from('appointments')
-      .update({
-        status: 'cancelled',
-        cancelled_at: getColombiaDate().toISOString()
-      })
-      .eq('id', appointmentId)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('[Chatbot] Error cancelando cita:', error);
-      return null;
-    }
-    
-    console.log(`[Chatbot] ✓ Cita cancelada: ${appointmentId}`);
-    return data;
+    console.log(`[Chatbot] ✓ Cita cancelada en Dentalink: ${appointmentId}`);
+    return {
+      id: response.data.id,
+      status: 'cancelled',
+      dentalink_id: response.data.id
+    };
   } catch (error) {
     console.error('[Chatbot] Error cancelando cita:', error);
     return null;
