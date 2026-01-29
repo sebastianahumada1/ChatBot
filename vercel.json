@@ -32,6 +32,10 @@
     {
       "source": "/calendario",
       "destination": "/api/calendario"
+    },
+    {
+      "source": "/bot",
+      "destination": "/api/bot"
     }
   ],
   "functions": {
@@ -54,6 +58,9 @@
       "maxDuration": 10
     },
     "api/calendario.js": {
+      "maxDuration": 10
+    },
+    "api/bot.js": {
       "maxDuration": 10
     }
   }
