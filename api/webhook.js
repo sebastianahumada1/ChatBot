@@ -271,60 +271,81 @@ async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) 
     return [];
   }
   
-  console.log(`[Dentalink] Querying slots with dentistaId: ${config.defaultDentistaId}, dentistaSucursales: [${config.dentistaSucursales.join(', ')}]`);
+  console.log(`[Dentalink] Querying slots with dentistaId: ${config.defaultDentistaId}`);
   
   const slots = [];
   const startDate = new Date(date);
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + daysAhead - 1);
   
-  // Query for each day in the range
-  for (let i = 0; i < daysAhead; i++) {
-    const currentDate = new Date(startDate);
-    currentDate.setDate(startDate.getDate() + i);
-    const dateStr = currentDate.toISOString().split('T')[0];
+  const startDateStr = startDate.toISOString().split('T')[0];
+  const endDateStr = endDate.toISOString().split('T')[0];
+  
+  // Query for each location (or specific location if provided)
+  const locationsToQuery = location 
+    ? [location] 
+    : Object.keys(config.sucursalIdMapping);
+  
+  for (const loc of locationsToQuery) {
+    const sucursalId = config.sucursalIdMapping[loc];
+    if (!sucursalId) continue;
     
-    // Query for each location (or specific location if provided)
-    const locationsToQuery = location 
-      ? [location] 
-      : Object.keys(config.sucursalIdMapping);
+    // Use the correct endpoint: /sucursales/{id_sucursal}/dentistas/{id_dentista}/agendas
+    const params = {
+      fecha_inicio: { eq: startDateStr },
+      fecha_fin: { eq: endDateStr },
+      mostrar_detalles: { eq: '0' }
+    };
     
-    for (const loc of locationsToQuery) {
-      const sucursalId = config.sucursalIdMapping[loc];
-      if (!sucursalId) continue;
+    const endpoint = `/sucursales/${sucursalId}/dentistas/${config.defaultDentistaId}/agendas?q=${encodeURIComponent(JSON.stringify(params))}`;
+    console.log(`[Dentalink] Querying agendas for ${loc}: ${startDateStr} to ${endDateStr}`);
+    
+    try {
+      const response = await dentalinkRequest(endpoint);
       
-      // IMPORTANT: Only query if the dentist has schedules configured for this sucursal
-      if (!config.dentistaSucursales.includes(sucursalId)) {
-        console.log(`[Dentalink] Skipping sucursal ${sucursalId} (${loc}) - dentist has no schedule there`);
-        continue;
-      }
-      
-      const params = {
-        id_sucursal: sucursalId,
-        fecha: dateStr,
-        duracion: 30, // 30 minutes default
-        id_dentista: config.defaultDentistaId
-      };
-      
-      console.log(`[Dentalink] Querying agendas: ${JSON.stringify(params)}`);
-      const response = await dentalinkRequest(`/agendas/?q=${encodeURIComponent(JSON.stringify(params))}`);
-      
-      if (response?.data) {
-        console.log(`[Dentalink] Got ${response.data.length} slots for ${dateStr} at ${loc}`);
-        // Filter available slots (id_paciente === 0 means available)
-        const availableSlots = response.data.filter(slot => slot.id_paciente === 0);
+      if (response?.data?.fechas) {
+        // Parse the response format: { fechas: { "2026-01-30": { horas: { "08:00": { sillones: { "1": true } } } } } }
+        for (const [dateStr, dateData] of Object.entries(response.data.fechas)) {
+          if (!dateData?.horas) continue;
+          
+          for (const [timeStr, timeData] of Object.entries(dateData.horas)) {
+            if (!timeData?.sillones) continue;
+            
+            // Check if any sillon is available (true means available)
+            const hasAvailableSillon = Object.values(timeData.sillones).some(value => value === true);
+            
+            if (hasAvailableSillon) {
+              // Find the first available sillon ID
+              const availableSillonId = Object.keys(timeData.sillones).find(
+                key => timeData.sillones[key] === true
+              );
+              
+              slots.push({
+                date: dateStr,
+                time: timeStr.substring(0, 5), // "08:00" format
+                location: loc,
+                dentistaId: config.defaultDentistaId,
+                dentistaNombre: config.defaultDentista?.nombre || 'Dr. Albeiro García',
+                sucursalId: sucursalId,
+                sillonId: parseInt(availableSillonId) || 1
+              });
+            }
+          }
+        }
         
-        availableSlots.forEach(slot => {
-          slots.push({
-            date: dateStr,
-            time: slot.hora_inicio.substring(0, 5), // "09:00" format
-            location: loc,
-            dentistaId: slot.id_dentista,
-            dentistaNombre: slot.nombre_dentista,
-            sucursalId: sucursalId
-          });
-        });
+        console.log(`[Dentalink] Found slots for ${loc}`);
       }
+    } catch (error) {
+      console.error(`[Dentalink] Error querying agendas for ${loc}:`, error.message);
     }
   }
+  
+  // Sort by date and time
+  slots.sort((a, b) => {
+    const dateCompare = a.date.localeCompare(b.date);
+    if (dateCompare !== 0) return dateCompare;
+    return a.time.localeCompare(b.time);
+  });
   
   console.log(`[Dentalink] Found ${slots.length} available slots total`);
   return slots;
@@ -332,7 +353,7 @@ async function getDentalinkAvailableSlots(date, location = null, daysAhead = 7) 
 
 // Create appointment in Dentalink
 async function createDentalinkAppointment(appointmentData) {
-  const { patientId, date, time, location, service } = appointmentData;
+  const { patientId, date, time, location, service, sillonId } = appointmentData;
   
   const config = await getDentalinkConfig();
   if (!config) {
@@ -347,7 +368,7 @@ async function createDentalinkAppointment(appointmentData) {
     id_paciente: patientId,
     id_sucursal: sucursalId,
     id_estado: 7, // "No confirmado"
-    id_sillon: 1, // Default chair
+    id_sillon: sillonId || 1, // Use provided sillon or default to 1
     fecha: date,
     hora_inicio: time,
     duracion: 30,
@@ -869,7 +890,7 @@ async function getAvailableSlots(date, location = null, daysAhead = 7) {
 // Crear/reservar una cita (using Dentalink API)
 async function createAppointment(phoneNumber, appointmentData) {
   try {
-    const { date, time, location, service, notes } = appointmentData;
+    const { date, time, location, service, notes, sillonId } = appointmentData;
     
     // Obtener paciente local
     const patient = await getPatientByPhone(phoneNumber);
@@ -895,7 +916,8 @@ async function createAppointment(phoneNumber, appointmentData) {
       date,
       time,
       location: location || 'rodadero',
-      service: service || notes || 'Cita agendada via WhatsApp'
+      service: service || notes || 'Cita agendada via WhatsApp',
+      sillonId: sillonId || 1
     });
     
     if (!dentalinkAppointment) {
