@@ -1087,6 +1087,143 @@ async function cancelAppointment(appointmentId) {
   }
 }
 
+// Extraer datos de cita del historial de conversación (fallback cuando timeout)
+async function extractAppointmentDataFromHistory(conversationHistory) {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return null;
+    
+    // Buscar en el historial los datos mencionados
+    const historyText = conversationHistory.map(msg => msg.content).join('\n');
+    
+    // Patrones para extraer datos
+    const datePatterns = [
+      /(\d{1,2})\s*de\s*(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s*(?:de|del)?\s*(\d{4}))?/gi,
+      /(\d{4})-(\d{2})-(\d{2})/g
+    ];
+    
+    const timePatterns = [
+      /(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?/gi,
+      /(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)/gi
+    ];
+    
+    const locationPatterns = [
+      /(rodadero|manzanares)/gi
+    ];
+    
+    // Patrones para extraer datos del paciente
+    const emailPattern = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z]{2,})/i;
+    const documentPattern = /(?:cedula|documento|cc|ci)?\s*(?:es|:)?\s*(\d{6,12})/i;
+    const namePattern = /(?:me llamo|mi nombre es|soy)\s+([A-Za-záéíóúñÁÉÍÓÚÑ\s]+)/i;
+    
+    let extractedDate = null;
+    let extractedTime = null;
+    let extractedLocation = 'rodadero';
+    let extractedName = null;
+    let extractedDocument = null;
+    let extractedEmail = null;
+    
+    // Extraer fecha
+    const monthMap = {
+      'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+      'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+      'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+    };
+    
+    for (const pattern of datePatterns) {
+      const matches = [...historyText.matchAll(pattern)];
+      if (matches.length > 0) {
+        const lastMatch = matches[matches.length - 1];
+        if (lastMatch[0].includes('-')) {
+          // Formato YYYY-MM-DD
+          extractedDate = lastMatch[0];
+        } else {
+          // Formato "2 de febrero"
+          const day = lastMatch[1].padStart(2, '0');
+          const month = monthMap[lastMatch[2].toLowerCase()];
+          const year = lastMatch[3] || '2026';
+          extractedDate = `${year}-${month}-${day}`;
+        }
+        break;
+      }
+    }
+    
+    // Extraer hora
+    for (const pattern of timePatterns) {
+      const matches = [...historyText.matchAll(pattern)];
+      if (matches.length > 0) {
+        const lastMatch = matches[matches.length - 1];
+        let hour = parseInt(lastMatch[1]);
+        const minutes = lastMatch[2] ? lastMatch[2].padStart(2, '0') : '00';
+        const period = lastMatch[3] || lastMatch[2];
+        
+        if (period && (period.toLowerCase().includes('p') && hour < 12)) {
+          hour += 12;
+        } else if (period && (period.toLowerCase().includes('a') && hour === 12)) {
+          hour = 0;
+        }
+        
+        extractedTime = `${String(hour).padStart(2, '0')}:${minutes}`;
+        break;
+      }
+    }
+    
+    // Extraer ubicación
+    for (const pattern of locationPatterns) {
+      const match = historyText.match(pattern);
+      if (match) {
+        extractedLocation = match[1].toLowerCase();
+        break;
+      }
+    }
+    
+    // Extraer datos del paciente
+    const emailMatch = historyText.match(emailPattern);
+    if (emailMatch) extractedEmail = emailMatch[1];
+    
+    const docMatch = historyText.match(documentPattern);
+    if (docMatch) extractedDocument = docMatch[1];
+    
+    const nameMatch = historyText.match(namePattern);
+    if (nameMatch) extractedName = nameMatch[1].trim();
+    
+    // También buscar nombre en formato "Nombre Apellido documento email"
+    const fullDataPattern = /([A-Za-záéíóúñÁÉÍÓÚÑ]+\s+[A-Za-záéíóúñÁÉÍÓÚÑ]+)\s+(\d{6,12})\s+(\d{10})\s+([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z]{2,})/i;
+    const fullMatch = historyText.match(fullDataPattern);
+    if (fullMatch) {
+      extractedName = extractedName || fullMatch[1];
+      extractedDocument = extractedDocument || fullMatch[2];
+      extractedEmail = extractedEmail || fullMatch[4];
+    }
+    
+    console.log(`[Chatbot] Datos extraídos del historial:`, {
+      date: extractedDate,
+      time: extractedTime,
+      location: extractedLocation,
+      name: extractedName,
+      document: extractedDocument,
+      email: extractedEmail
+    });
+    
+    return {
+      patientInfo: {
+        name: extractedName,
+        document: extractedDocument,
+        email: extractedEmail
+      },
+      appointmentInfo: {
+        date: extractedDate,
+        time: extractedTime,
+        location: extractedLocation,
+        service: 'Valoración'
+      }
+    };
+  } catch (error) {
+    console.error('[Chatbot] Error extrayendo datos del historial:', error);
+    return null;
+  }
+}
+
 // Detectar agendamiento y extraer información del paciente en una sola llamada (optimizado)
 async function detectBookingAndExtractPatientInfo(conversationHistory, currentMessage) {
   try {
@@ -1136,9 +1273,13 @@ ${conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
 Usuario actual: ${currentMessage}`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout para esta llamada
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout para esta llamada
 
     try {
+      console.log('[Chatbot] Detectando confirmación de agendamiento...');
+      console.log('[Chatbot] Mensaje actual:', currentMessage);
+      console.log('[Chatbot] Historial:', conversationHistory.length, 'mensajes');
+      
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -1151,13 +1292,14 @@ Usuario actual: ${currentMessage}`;
             { role: 'system', content: combinedPrompt },
             { role: 'user', content: 'Analiza la conversación y responde con el JSON.' }
           ],
-          max_tokens: 150,
-          temperature: 0.2
+          max_tokens: 200,
+          temperature: 0.1
         }),
         signal: controller.signal
       });
 
       clearTimeout(timeoutId);
+      console.log('[Chatbot] Respuesta de detección recibida:', response.status);
 
       if (!response.ok) {
         console.error('[Chatbot] Error en detección/extracción:', response.status);
@@ -1166,6 +1308,7 @@ Usuario actual: ${currentMessage}`;
 
       const data = await response.json();
       const extractedText = data.choices?.[0]?.message?.content?.trim();
+      console.log('[Chatbot] Texto extraído para detección:', extractedText);
       
       if (!extractedText) {
         return { isBooking: false, patientInfo: null };
@@ -1245,7 +1388,14 @@ Usuario actual: ${currentMessage}`;
     } catch (fetchError) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        console.warn('[Chatbot] Timeout en detección/extracción (5s)');
+        console.warn('[Chatbot] Timeout en detección/extracción (12s) - intento alternativo...');
+        // Intento simplificado: detectar solo por palabras clave
+        const confirmWords = ['sí', 'si', 'confirmo', 'acepto', 'correcto', 'está bien', 'de acuerdo', 'perfecto', 'ok', 'dale'];
+        const isSimpleConfirm = confirmWords.some(word => currentMessage.toLowerCase().includes(word));
+        if (isSimpleConfirm) {
+          console.log('[Chatbot] Detección simple: posible confirmación detectada');
+          return { isBooking: true, patientInfo: null, appointmentInfo: null, needsExtraction: true };
+        }
       } else {
         console.error('[Chatbot] Error en fetch:', fetchError);
       }
@@ -1610,10 +1760,21 @@ Responde solo con el nombre o "null":`;
         }
         
         // WORKFLOW 2: Detectar agendamiento y extraer información en una sola llamada (optimizado)
-        const { isBooking, patientInfo, appointmentInfo } = await detectBookingAndExtractPatientInfo(
+        let { isBooking, patientInfo, appointmentInfo, needsExtraction } = await detectBookingAndExtractPatientInfo(
           fullHistoryWithCurrent.slice(0, -2), // Sin los últimos 2 mensajes (user y assistant actuales)
           userMessage
         );
+        
+        // Si se detectó confirmación pero falta extraer datos, intentar extraerlos del historial
+        if (isBooking && needsExtraction) {
+          console.log(`[Chatbot] 🔍 Extrayendo datos de la conversación...`);
+          const extractedData = await extractAppointmentDataFromHistory(fullHistoryWithCurrent);
+          if (extractedData) {
+            patientInfo = extractedData.patientInfo || patientInfo;
+            appointmentInfo = extractedData.appointmentInfo || appointmentInfo;
+            console.log(`[Chatbot] Datos extraídos del historial:`, { patientInfo, appointmentInfo });
+          }
+        }
         
         if (isBooking) {
           console.log(`[Chatbot] 🎯 CONFIRMACIÓN de agendamiento detectada para ${phoneNumber}`);
