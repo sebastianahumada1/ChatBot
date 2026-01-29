@@ -87,43 +87,54 @@ async function getConversationHistory(phoneNumber, limit = 20) {
   }
 }
 
-// Obtener configuración de IA desde Supabase
-async function getAIConfig() {
+// Obtener prompt del bot desde Supabase (tabla bot_prompt)
+async function getBotPrompt() {
   try {
     const supabase = getSupabaseClient();
     if (!supabase) {
-      console.warn('[Chatbot] Supabase no disponible, usando configuración por defecto');
-      return {
-        system_prompt: { text: 'Eres un asistente breve y útil.' },
-        business_info: { name: '', phone: '', address: '', email: '' },
-        business_hours: { monday: '', tuesday: '', wednesday: '', thursday: '', friday: '', saturday: '', sunday: '' },
-        services: { list: [] },
-        rules: { text: '' }
-      };
+      console.warn('[Chatbot] Supabase no disponible, usando prompt por defecto');
+      return 'Eres un asistente virtual amable y profesional. Responde de manera breve y útil.';
     }
     
     const { data, error } = await supabase
-      .from('ai_config')
-      .select('key, value');
+      .from('bot_prompt')
+      .select('prompt')
+      .eq('id', 'main')
+      .single();
     
     if (error) {
-      console.error('[Chatbot] Error obteniendo configuración:', error);
-      return null;
+      if (error.code === 'PGRST116') {
+        console.warn('[Chatbot] Prompt no encontrado, usando por defecto');
+        return 'Eres un asistente virtual amable y profesional. Responde de manera breve y útil.';
+      }
+      console.error('[Chatbot] Error obteniendo prompt:', error);
+      return 'Eres un asistente virtual amable y profesional. Responde de manera breve y útil.';
     }
     
-    // Convertir array de {key, value} a objeto
-    const config = {};
-    if (data) {
-      data.forEach(item => {
-        config[item.key] = item.value;
-      });
-    }
-    
-    return config;
+    return data?.prompt || 'Eres un asistente virtual amable y profesional. Responde de manera breve y útil.';
   } catch (error) {
-    console.error('[Chatbot] Error obteniendo configuración:', error);
-    return null;
+    console.error('[Chatbot] Error obteniendo prompt:', error);
+    return 'Eres un asistente virtual amable y profesional. Responde de manera breve y útil.';
   }
+}
+
+// Obtener horarios de negocio del prompt (parsear si es necesario)
+function extractBusinessHours(prompt) {
+  // Horarios por defecto basados en el prompt estándar
+  const defaultHours = {
+    rodadero: 'L-V 08:00–18:00; Sáb 08:00–13:00; Festivos: cerrado',
+    manzanares: 'L-V 08:00–17:00; Sáb 08:00–12:00; Festivos: cerrado'
+  };
+  
+  // Intentar extraer horarios del prompt si están definidos
+  // Buscar patrones como "Rodadero: L-V 08:00–18:00"
+  const rodaderoMatch = prompt.match(/Rodadero[:\s]+([^;\n]+(?:;[^;\n]+)*)/i);
+  const manzanaresMatch = prompt.match(/Manzanares[:\s]+([^;\n]+(?:;[^;\n]+)*)/i);
+  
+  return {
+    rodadero: rodaderoMatch ? rodaderoMatch[1].trim() : defaultHours.rodadero,
+    manzanares: manzanaresMatch ? manzanaresMatch[1].trim() : defaultHours.manzanares
+  };
 }
 
 // Verificar si un paciente existe por número de teléfono
@@ -401,9 +412,9 @@ async function getAvailableSlots(date, location = null, daysAhead = 7) {
       return [];
     }
     
-    // Obtener horarios de negocio
-    const config = await getAIConfig();
-    const businessHours = config?.business_hours || {};
+    // Obtener horarios de negocio del prompt
+    const botPrompt = await getBotPrompt();
+    const businessHours = extractBusinessHours(botPrompt);
     
     // Generar todos los slots posibles
     const allSlots = generateAvailableSlots(businessHours, date, daysAhead);
@@ -966,142 +977,22 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
   const isPatientRegistered = existingPatient && existingPatient.name;
   console.log(`[Chatbot] Paciente registrado: ${isPatientRegistered ? `Sí (${existingPatient.name})` : 'No'}`);
   
-  // Obtener configuración de IA
-  const config = await getAIConfig();
-  console.log(`[Chatbot] Configuración de IA obtenida: ${config ? 'Sí' : 'No'}`);
+  // Obtener prompt del bot desde la base de datos
+  const botPrompt = await getBotPrompt();
+  console.log(`[Chatbot] Prompt del bot obtenido: ${botPrompt ? 'Sí' : 'No'} (${botPrompt?.length || 0} caracteres)`);
   
-  // Construir system prompt con configuración
-  let systemPrompt = 'Eres un asistente breve y útil.';
-  if (config) {
-    const systemPromptText = config.system_prompt?.text || 'Eres un asistente breve y útil.';
-    const businessInfo = config.business_info || {};
-    const businessHours = config.business_hours || {};
-    const servicesAndPricing = config.services_and_pricing || {};
-    const rules = config.rules || {};
-    const urgencyProtocol = config.urgency_protocol || {};
-    const bookingRequirements = config.booking_requirements || {};
-    const logisticsAndPayments = config.logistics_and_payments || {};
-    
-    // Construir prompt completo
-    let promptParts = [systemPromptText];
-    
-    // Información del negocio
-    if (businessInfo.brand || businessInfo.legal_name) {
-      promptParts.push('\n\nInformación del negocio:');
-      if (businessInfo.brand) promptParts.push(`- Marca: ${businessInfo.brand}`);
-      if (businessInfo.legal_name) promptParts.push(`- Nombre legal: ${businessInfo.legal_name}`);
-      
-      if (businessInfo.locations && Array.isArray(businessInfo.locations)) {
-        promptParts.push('\nSedes:');
-        businessInfo.locations.forEach(loc => {
-          promptParts.push(`- ${loc.sede}: ${loc.address}${loc.reference ? ` (${loc.reference})` : ''}`);
-        });
-      }
-      
-      if (businessInfo.contact) {
-        promptParts.push('\nContacto:');
-        if (businessInfo.contact.whatsapp) promptParts.push(`- WhatsApp: ${businessInfo.contact.whatsapp}`);
-        if (businessInfo.contact.email) promptParts.push(`- Email: ${businessInfo.contact.email}`);
-        if (businessInfo.contact.instagram) promptParts.push(`- Instagram: ${businessInfo.contact.instagram}`);
-        if (businessInfo.contact.facebook) promptParts.push(`- Facebook: ${businessInfo.contact.facebook}`);
-      }
-    }
-    
-    // Horarios por sede
-    if (businessHours.rodadero || businessHours.manzanares) {
-      promptParts.push('\n\nHorarios de atención:');
-      if (businessHours.rodadero) promptParts.push(`- Rodadero: ${businessHours.rodadero}`);
-      if (businessHours.manzanares) promptParts.push(`- Manzanares: ${businessHours.manzanares}`);
-    }
-    
-    // Servicios y precios
-    if (servicesAndPricing.list && servicesAndPricing.list.length > 0) {
-      promptParts.push('\n\nServicios ofrecidos:');
-      servicesAndPricing.list.forEach(service => {
-        promptParts.push(`- ${service}`);
-      });
-      if (servicesAndPricing.policy) {
-        promptParts.push(`\nPolítica de precios: ${servicesAndPricing.policy}`);
-      }
-      if (servicesAndPricing.teleconsulta) {
-        promptParts.push(`\nTeleconsulta: ${servicesAndPricing.teleconsulta.cost} (${servicesAndPricing.teleconsulta.duration}) - ${servicesAndPricing.teleconsulta.hours}`);
-      }
-    }
-    
-    // Reglas
-    if (rules.anti_hallucination) {
-      promptParts.push(`\n\nREGLA CRÍTICA: ${rules.anti_hallucination}`);
-    }
-    if (rules.habeas_data) {
-      promptParts.push(`\nHabeas Data: ${rules.habeas_data}`);
-    }
-    if (rules.priorities) {
-      promptParts.push('\nPrioridades:');
-      if (rules.priorities.alta) promptParts.push(`- Alta: ${rules.priorities.alta}`);
-      if (rules.priorities.media) promptParts.push(`- Media: ${rules.priorities.media}`);
-      if (rules.priorities.baja) promptParts.push(`- Baja: ${rules.priorities.baja}`);
-    }
-    if (rules.health_restrictions && Array.isArray(rules.health_restrictions)) {
-      promptParts.push('\nRestricciones médicas:');
-      rules.health_restrictions.forEach(restriction => {
-        promptParts.push(`- ${restriction}`);
-      });
-    }
-    
-    // Protocolo de urgencias
-    if (urgencyProtocol.keywords && urgencyProtocol.script) {
-      promptParts.push(`\n\nProtocolo de urgencias: Si detectas palabras clave como "${urgencyProtocol.keywords.join(', ')}", usa este script: ${urgencyProtocol.script}`);
-    }
-    
-    // Requisitos de agendamiento
-    if (bookingRequirements.fields) {
-      promptParts.push('\n\nRequisitos para agendar:');
-      Object.entries(bookingRequirements.fields).forEach(([field, desc]) => {
-        promptParts.push(`- ${field}: ${desc}`);
-      });
-      if (bookingRequirements.alternatives_rule) {
-        promptParts.push(`\nRegla de alternativas: ${bookingRequirements.alternatives_rule}`);
-      }
-    }
-    
-    // Logística y pagos
-    if (logisticsAndPayments.parking || logisticsAndPayments.payment_methods) {
-      promptParts.push('\n\nLogística:');
-      if (logisticsAndPayments.parking) {
-        if (logisticsAndPayments.parking.rodadero) {
-          promptParts.push(`- Parqueo Rodadero: ${logisticsAndPayments.parking.rodadero}`);
-        }
-        if (logisticsAndPayments.parking.manzanares) {
-          promptParts.push(`- Parqueo Manzanares: ${logisticsAndPayments.parking.manzanares}`);
-        }
-      }
-      if (logisticsAndPayments.accessibility) {
-        promptParts.push(`- Accesibilidad: ${logisticsAndPayments.accessibility}`);
-      }
-      if (logisticsAndPayments.payment_methods && Array.isArray(logisticsAndPayments.payment_methods)) {
-        promptParts.push(`\nMétodos de pago: ${logisticsAndPayments.payment_methods.join(', ')}`);
-      }
-    }
-    
-    systemPrompt = promptParts.join('\n');
-  }
+  // El prompt completo viene de la tabla bot_prompt
+  let systemPrompt = botPrompt;
   
-  // REGLA PRINCIPAL Y GLOBAL: Flujo conversacional estructurado
+  // Agregar contexto dinámico del paciente
   if (isPatientRegistered) {
-    // Paciente ya registrado: saludar por nombre y confirmar datos
-    systemPrompt += `\n\nREGLA PRINCIPAL - PACIENTE REGISTRADO:\n- El número ${phoneNumber} está asociado al paciente: ${existingPatient.name}\n- SIEMPRE saluda al paciente por su nombre: "¡Hola ${existingPatient.name}! 😊"\n- Confirma rápidamente sus datos: "Veo que ya tienes una cuenta con nosotros. ¿Tus datos siguen siendo correctos?"\n- Si el paciente confirma, continúa con su solicitud normalmente.\n- Si necesita actualizar datos, pídelos de forma amigable.\n- Mantén un tono cálido y personalizado en toda la conversación.`;
+    // Paciente ya registrado: personalizar saludo
+    systemPrompt += `\n\n---\nCONTEXTO DEL PACIENTE ACTUAL:\n- Número: ${phoneNumber}\n- Nombre registrado: ${existingPatient.name}\n- IMPORTANTE: Este paciente YA está registrado. Salúdalo por su nombre y no le pidas datos que ya tenemos.`;
+    if (existingPatient.document) systemPrompt += `\n- Documento: ${existingPatient.document}`;
+    if (existingPatient.email) systemPrompt += `\n- Email: ${existingPatient.email}`;
   } else {
-    // Paciente no registrado: flujo conversacional estructurado OBLIGATORIO
-    const clinicName = config?.business_info?.brand || 'la Clínica Dr. Albeiro García';
-    const locations = config?.business_info?.locations || [];
-    let locationInfo = '';
-    if (locations && locations.length > 0) {
-      locationInfo = locations.map(loc => 
-        `- ${loc.sede}: ${loc.address}${loc.reference ? ` (${loc.reference})` : ''}`
-      ).join('\n');
-    }
-    
-    systemPrompt += `\n\nREGLA PRINCIPAL - FLUJO CONVERSACIONAL ESTRUCTURADO (OBLIGATORIO PARA NUEVOS PACIENTES):\n- Este es un número nuevo que NO está registrado en nuestra base de datos.\n- DEBES seguir este orden EXACTO en todas las conversaciones nuevas:\n\nPASO 1 - SALUDO Y BIENVENIDA:\n  Saluda y da la bienvenida a ${clinicName}.\n  Ejemplo: "¡Hola! 😊 Bienvenido/a a ${clinicName} — Diseño de Sonrisas & Armonización Facial. Estoy aquí para ayudarte."\n\nPASO 2 - PREGUNTAR NOMBRE:\n  Pregunta el nombre completo del cliente de forma amigable.\n  Ejemplo: "Para brindarte un mejor servicio, ¿podrías decirme tu nombre completo?"\n  Una vez que tengas el nombre, GUÁRDALO en la base de datos.\n\nPASO 3 - PREGUNTAR SERVICIO:\n  Pregunta sobre qué servicio requiere información.\n  Ejemplo: "¿Sobre qué servicio te gustaría obtener información o agendar una cita?"\n  Espera la respuesta del cliente sobre el servicio que necesita.\n\nPASO 4 - PEDIR DATOS:\n  Solicita los datos necesarios de forma amigable:\n  • Documento de identidad (cédula, pasaporte, etc.)\n  • Número de teléfono (confirma el número actual)\n  • Correo electrónico\n  Ejemplo: "Perfecto. Para proceder, necesito algunos datos:\n  • Tu documento de identidad\n  • Tu número de teléfono (para confirmar)\n  • Tu correo electrónico\n  ¿Podrías proporcionármelos?"\n\nPASO 5A - SI SOLO QUIERE INFORMACIÓN:\n  Una vez que tengas los datos, proporciona la información solicitada sobre el servicio.\n\nPASO 5B - SI QUIERE AGENDAR CITA:\n  Sigue este sub-flujo:\n  a) PRIMERO pregunta una fecha probable y un horario.\n     Ejemplo: "¿Qué fecha te gustaría para tu cita? (formato: día/mes, ejemplo: 25/01)"\n     Luego: "¿A qué hora te conviene? (formato: HH:MM, ejemplo: 14:00)"\n  b) LUEGO pregunta en qué sede.\n     Ejemplo: "¿En qué sede te gustaría agendar?\n     • Rodadero\n     • Manzanares"\n  c) Cuando el cliente elija la sede, da información corta de dónde queda:\n     ${locationInfo || 'Rodadero: Cra. 4 #12-55, Piso 3 (Frente a Olímpica Rodadero, cerca al C.C. Arrecife)\n     Manzanares: Calle 30 #5-44, Local 7 (Cerca a la Iglesia de Manzanares)'}\n  d) Finalmente, muestra un RESUMEN de la cita y solicita confirmación explícita.\n\n- IMPORTANTE: Este flujo es OBLIGATORIO y debe seguirse en orden. NO saltes pasos.\n- Mantén un tono cálido, empático y profesional usando emojis apropiados (😊, 💎, 🌿).`;
+    // Paciente nuevo: recordar seguir el flujo de registro
+    systemPrompt += `\n\n---\nCONTEXTO DEL PACIENTE ACTUAL:\n- Número: ${phoneNumber}\n- Estado: NUEVO (no registrado en la base de datos)\n- IMPORTANTE: Sigue el flujo conversacional para nuevos pacientes definido arriba.`;
   }
   
   // Agregar instrucciones sobre el contexto
@@ -1109,21 +1000,12 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     systemPrompt += '\n\nINSTRUCCIONES DE CONTEXTO:\n- Revisa el historial de la conversación para recordar información previa.\n- Si el usuario menciona algo que ya hablaron antes, haz referencia a ello de manera natural.\n- Mantén la coherencia con mensajes anteriores.\n- Si el usuario pregunta algo que ya respondiste, puedes hacer referencia a la respuesta anterior de forma breve.';
   }
   
-  // Agregar instrucciones sobre gestión de citas
+  // Agregar información técnica para gestión de citas
   const currentYear = 2026; // Año base para agendamiento
   const colombiaDate = getColombiaDate();
   const currentDateStr = getColombiaDateString(colombiaDate);
-  const locations = config?.business_info?.locations || [];
-  let locationDetails = '';
-  if (locations && locations.length > 0) {
-    locationDetails = locations.map(loc => 
-      `- ${loc.sede}: ${loc.address}${loc.reference ? ` (${loc.reference})` : ''}`
-    ).join('\n');
-  } else {
-    locationDetails = '- Rodadero: Cra. 4 #12-55, Piso 3 (Frente a Olímpica Rodadero, cerca al C.C. Arrecife)\n- Manzanares: Calle 30 #5-44, Local 7 (Cerca a la Iglesia de Manzanares)';
-  }
   
-  systemPrompt += `\n\nGESTIÓN DE CITAS (AÑO BASE: ${currentYear}, HUSO HORARIO: Colombia GMT-5):\n- IMPORTANTE: Todas las fechas deben incluir el año completo (formato: YYYY-MM-DD). El año actual es ${currentYear}.\n- IMPORTANTE: Todas las fechas y horas están en el huso horario de Colombia (GMT-5, America/Bogota).\n- Cuando el usuario quiera agendar una cita, sigue este orden:\n  1. PRIMERO pregunta una fecha probable y un horario.\n     Ejemplo: "¿Qué fecha te gustaría para tu cita? (puedes decirme el día y mes, por ejemplo: 25 de enero)"\n     Luego: "¿A qué hora te conviene? (formato: HH:MM, ejemplo: 14:00 o 2:00 PM)"\n  2. LUEGO pregunta en qué sede.\n     Ejemplo: "¿En qué sede te gustaría agendar?\n     • Rodadero\n     • Manzanares"\n  3. Cuando el cliente elija la sede, da información CORTA de dónde queda:\n     ${locationDetails}\n  4. Finalmente, muestra un RESUMEN de la cita con todos los detalles y SOLICITA CONFIRMACIÓN explícita.\n     Ejemplo de resumen: "Resumen de tu cita:\n     📅 Fecha: [fecha completa con año]\n     🕐 Hora: [hora]\n     📍 Sede: [ubicación]\n     🦷 Servicio: [servicio si aplica]\n     ¿Confirmas esta cita? Responde 'sí', 'confirmo' o 'acepto' para agendar."\n  5. SOLO cuando el usuario confirme explícitamente (diciendo "sí", "confirmo", "acepto", "correcto", etc.), entonces la cita quedará agendada.\n  6. Si el usuario no confirma o dice "no", no agendes la cita.\n- Si el usuario pregunta por disponibilidad, usa la información de disponibilidad que se te proporciona y muéstrala de forma clara.\n- Si el usuario quiere modificar o cancelar una cita, primero consulta sus citas existentes.\n- NUNCA agendes una cita sin seguir este orden: fecha/horario → sede → información de ubicación → resumen → confirmación.`;
+  systemPrompt += `\n\n---\nINFORMACIÓN TÉCNICA PARA CITAS:\n- Fecha actual (Colombia): ${currentDateStr}\n- Año base: ${currentYear}\n- Huso horario: Colombia (GMT-5)\n- Formato de fechas: YYYY-MM-DD (ejemplo: 2026-01-25)\n- RECUERDA: Siempre muestra un resumen y pide confirmación explícita antes de agendar.`;
   
   // Detectar si el usuario pregunta por disponibilidad o citas
   const appointmentKeywords = ['disponibilidad', 'disponible', 'cita', 'agendar', 'horario', 'fecha', 'cuando puedo', 'cuando hay', 'agenda'];

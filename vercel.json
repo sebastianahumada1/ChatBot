@@ -36,6 +36,10 @@
     {
       "source": "/bot",
       "destination": "/api/bot"
+    },
+    {
+      "source": "/api/bot-prompt",
+      "destination": "/api/bot-prompt"
     }
   ],
   "functions": {
@@ -61,6 +65,9 @@
       "maxDuration": 10
     },
     "api/bot.js": {
+      "maxDuration": 10
+    },
+    "api/bot-prompt.js": {
       "maxDuration": 10
     }
   }
