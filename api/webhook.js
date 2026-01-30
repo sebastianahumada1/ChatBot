@@ -1739,8 +1739,8 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     console.log(`[Chatbot] Mensajes guardados en base de datos para ${phoneNumber}`);
     
     // WORKFLOW: Detectar y guardar nombre del paciente (si es nuevo) + Detectar agendamiento
-    // Ejecutar de forma asíncrona para no bloquear la respuesta (fire and forget)
-    (async () => {
+    // IMPORTANTE: Ahora es síncrono para asegurar que Vercel no termine antes de crear la cita
+    await (async () => {
       try {
         // Obtener historial completo incluyendo el mensaje actual
         const fullHistory = await getConversationHistory(phoneNumber, 20);
@@ -1888,7 +1888,7 @@ Responde solo con el nombre o "null":`;
         // No fallar la respuesta si el workflow tiene un error
         console.error('[Chatbot] Error en workflow de paciente:', workflowError);
       }
-    })(); // IIFE para ejecutar de forma asíncrona
+    })(); // IIFE ahora es síncrono para que Vercel no termine antes
     
     return aiMessage || 'Lo siento, no puedo responder ahora mismo.';
   } catch (error) {
