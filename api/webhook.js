@@ -888,15 +888,63 @@ async function getAvailableSlots(date, location = null, daysAhead = 7) {
 }
 
 // Crear/reservar una cita (using Dentalink API)
-async function createAppointment(phoneNumber, appointmentData) {
+async function createAppointment(phoneNumber, appointmentData, patientInfo = null) {
   try {
     const { date, time, location, service, notes, sillonId } = appointmentData;
     
     // Obtener paciente local
-    const patient = await getPatientByPhone(phoneNumber);
+    let patient = await getPatientByPhone(phoneNumber);
+    
+    // Si el paciente no existe, intentar crearlo con la info disponible
     if (!patient) {
-      console.warn(`[Chatbot] Paciente no encontrado para ${phoneNumber}`);
-      return null;
+      console.log(`[Chatbot] Paciente no existe, intentando crear con info disponible...`);
+      
+      // Intentar extraer nombre del contexto de la conversación
+      let patientName = patientInfo?.name || null;
+      
+      // Si no tenemos nombre, intentar obtenerlo del historial
+      if (!patientName) {
+        const history = await getConversationHistory(phoneNumber, 20);
+        const historyText = history.map(m => m.content).join('\n');
+        
+        // Buscar patrones de nombre en el historial
+        const namePatterns = [
+          /me llamo\s+([A-Za-záéíóúñÁÉÍÓÚÑ\s]+)/i,
+          /mi nombre es\s+([A-Za-záéíóúñÁÉÍÓÚÑ\s]+)/i,
+          /soy\s+([A-Za-záéíóúñÁÉÍÓÚÑ]+(?:\s+[A-Za-záéíóúñÁÉÍÓÚÑ]+)?)/i,
+          /([A-Za-záéíóúñÁÉÍÓÚÑ]+\s+[A-Za-záéíóúñÁÉÍÓÚÑ]+)\s+\d{6,12}/i  // "Nombre Apellido 123456789"
+        ];
+        
+        for (const pattern of namePatterns) {
+          const match = historyText.match(pattern);
+          if (match && match[1]) {
+            patientName = match[1].trim();
+            console.log(`[Chatbot] Nombre extraído del historial: ${patientName}`);
+            break;
+          }
+        }
+      }
+      
+      if (!patientName) {
+        console.warn(`[Chatbot] No se pudo obtener nombre del paciente para crear`);
+        // Usar nombre genérico basado en el teléfono
+        patientName = `Paciente WhatsApp ${phoneNumber.slice(-4)}`;
+        console.log(`[Chatbot] Usando nombre genérico: ${patientName}`);
+      }
+      
+      // Crear paciente en Supabase
+      patient = await createOrUpdatePatient(phoneNumber, {
+        name: patientName,
+        document: patientInfo?.document || null,
+        email: patientInfo?.email || null
+      });
+      
+      if (!patient) {
+        console.error(`[Chatbot] No se pudo crear paciente en Supabase para ${phoneNumber}`);
+        return { error: 'No se pudo crear el paciente' };
+      }
+      
+      console.log(`[Chatbot] ✓ Paciente creado en Supabase: ${patient.name}`);
     }
     
     // Ensure patient exists in Dentalink and get their ID
@@ -1820,7 +1868,7 @@ Responde solo con el nombre o "null":`;
                 location: location,
                 service: appointmentInfo.service || null,
                 notes: null
-              });
+              }, patientInfo);
               
               if (appointment && !appointment.error) {
                 console.log(`[Chatbot] ✓✓✓ CITA CREADA EXITOSAMENTE: ${appointmentInfo.date} ${appointmentInfo.time} en ${location} (ID: ${appointment.id})`);
