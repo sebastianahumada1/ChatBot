@@ -164,7 +164,7 @@ export default async function handler(req, res) {
       celular = celular.substring(2);
     }
     
-    const patientParams = { celular };
+    const patientParams = { celular: { eq: celular } };
     const patientResponse = await dentalinkRequest(`/pacientes/?q=${encodeURIComponent(JSON.stringify(patientParams))}`);
     
     if (!patientResponse?.data || patientResponse.data.length === 0) {

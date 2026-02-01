@@ -178,7 +178,7 @@ async function searchDentalinkPatientByPhone(phone) {
     celular = celular.substring(2); // Remove Colombia country code
   }
   
-  const params = { celular };
+  const params = { celular: { eq: celular } };
   const response = await dentalinkRequest(`/pacientes/?q=${encodeURIComponent(JSON.stringify(params))}`);
   
   if (response?.data && response.data.length > 0) {
@@ -187,7 +187,7 @@ async function searchDentalinkPatientByPhone(phone) {
   }
   
   // Also try with full number including country code
-  const paramsWithCode = { celular: phone };
+  const paramsWithCode = { celular: { eq: phone } };
   const responseWithCode = await dentalinkRequest(`/pacientes/?q=${encodeURIComponent(JSON.stringify(paramsWithCode))}`);
   
   if (responseWithCode?.data && responseWithCode.data.length > 0) {
@@ -202,7 +202,7 @@ async function searchDentalinkPatientByPhone(phone) {
 async function searchDentalinkPatientByName(name) {
   if (!name) return null;
   
-  const params = { nombre: name };
+  const params = { nombre: { eq: name } };
   const response = await dentalinkRequest(`/pacientes/?q=${encodeURIComponent(JSON.stringify(params))}`);
   
   if (response?.data && response.data.length > 0) {
