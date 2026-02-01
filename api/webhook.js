@@ -69,6 +69,28 @@ async function dentalinkRequest(endpoint, method = 'GET', body = null) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[Dentalink] Error ${response.status}: ${errorText}`);
+      
+      // SPECIAL CASE: Dentalink puede retornar 400 con mensaje de error 
+      // pero aún así crear la cita. Intentamos parsear la respuesta.
+      if (response.status === 400 && method === 'POST' && endpoint === '/citas/') {
+        try {
+          const errorData = JSON.parse(errorText);
+          // Si el error es sobre "tope" pero la cita podría haberse creado,
+          // intentamos verificar consultando las citas recientes del paciente
+          if (errorData?.error?.message?.includes('tope')) {
+            console.warn('[Dentalink] ⚠️ Error 400 de tope detectado, pero la cita podría haberse creado de todas formas');
+            // Retornamos un objeto especial indicando que hay que verificar
+            return { 
+              _needsVerification: true, 
+              _errorMessage: errorData.error.message,
+              _requestBody: body 
+            };
+          }
+        } catch (parseError) {
+          console.error('[Dentalink] No se pudo parsear el error:', parseError);
+        }
+      }
+      
       return null;
     }
     
@@ -385,6 +407,37 @@ async function createDentalinkAppointment(appointmentData) {
   
   console.log(`[Dentalink] Creating appointment: ${date} ${time} at ${location}`);
   const response = await dentalinkRequest('/citas/', 'POST', body);
+  
+  // Check if we need to verify the appointment was created despite error
+  if (response?._needsVerification) {
+    console.warn(`[Dentalink] ⚠️ Received error but verifying if appointment was created: ${response._errorMessage}`);
+    
+    // Wait a moment for Dentalink to process
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Query recent appointments for this patient to verify
+    try {
+      const verifyParams = {
+        id_paciente: { eq: patientId },
+        fecha: { eq: date },
+        hora_inicio: { eq: time }
+      };
+      
+      const verifyResponse = await dentalinkRequest(`/citas/?q=${encodeURIComponent(JSON.stringify(verifyParams))}`);
+      
+      if (verifyResponse?.data && verifyResponse.data.length > 0) {
+        const createdAppointment = verifyResponse.data[0];
+        console.log(`[Dentalink] ✅ VERIFICADO: La cita SÍ se creó a pesar del error 400. ID: ${createdAppointment.id}`);
+        return createdAppointment;
+      } else {
+        console.error(`[Dentalink] ❌ La cita NO se creó. El error 400 fue legítimo.`);
+        return null;
+      }
+    } catch (verifyError) {
+      console.error(`[Dentalink] Error al verificar cita:`, verifyError);
+      return null;
+    }
+  }
   
   if (response?.data) {
     console.log(`[Dentalink] Appointment created: ID ${response.data.id}`);
