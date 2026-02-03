@@ -782,7 +782,7 @@ function getWeekdayForDate(date) {
 }
 
 // Genera tabla de referencia fecha -> día de la semana para inyectar en el prompt del bot.
-// startDateStr = "YYYY-MM-DD", numDays = cuántos días hacia adelante. Todo en Colombia.
+// Incluye YYYY-MM-DD y DD/MM/YYYY para que la IA no se confunda cuando el usuario diga "06/02/2026".
 function getWeekdayTableForBot(startDateStr, numDays = 14) {
   const start = new Date(startDateStr.trim() + 'T12:00:00-05:00');
   const lines = [];
@@ -790,8 +790,10 @@ function getWeekdayTableForBot(startDateStr, numDays = 14) {
   for (let i = 0; i < numDays; i++) {
     const d = new Date(start.getTime() + i * oneDayMs);
     const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const parts = d.toLocaleDateString('en-GB', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', year: 'numeric' }).split('/');
+    const ddMmYyyy = `${parts[0]}/${parts[1]}/${parts[2]}`;
     const weekday = getWeekdayForDate(dateStr);
-    lines.push(`${dateStr} → ${weekday}`);
+    lines.push(`${dateStr} = ${ddMmYyyy} → ${weekday}`);
   }
   return lines.join('\n');
 }
@@ -1711,11 +1713,52 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
   const colombiaDate = getColombiaDate();
   const currentDateStr = getColombiaDateString(colombiaDate);
   const currentDateWithWeekday = formatColombiaDate(colombiaDate, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  
-  // Tabla de referencia: cada fecha con su día de la semana (Colombia). El bot DEBE usar esta tabla para no equivocarse.
-  const weekdayTable = getWeekdayTableForBot(currentDateStr, 21);
-  
-  systemPrompt += `\n\n---\nINFORMACIÓN TÉCNICA PARA CITAS (Colombia GMT-5):\n- Hoy es: ${currentDateWithWeekday}\n- Fecha en formato técnico: ${currentDateStr}\n- Año base: ${currentYear}\n- Huso horario: Colombia (GMT-5).\n\nTABLA DE REFERENCIA - DÍA DE LA SEMANA POR FECHA (usa SIEMPRE esta tabla al mencionar fechas):\n${weekdayTable}\n\n- Formato de fechas: YYYY-MM-DD (ejemplo: 2026-01-25)\n- RECUERDA: Siempre muestra un resumen y pide confirmación explícita antes de agendar.`;
+  // FECHA_HOY en DD/MM/AAAA (Colombia) para anclar "hoy" en el prompt
+  const [y, m, d] = currentDateStr.split('-');
+  const FECHA_HOY = `${d}/${m}/${y}`;
+  const DIA_SEMANA_HOY = getWeekdayForDate(currentDateStr);
+  // Tabla de referencia: cada fecha con su día de la semana (Colombia). OBLIGATORIO que la IA use solo esta tabla.
+  const weekdayTable = getWeekdayTableForBot(currentDateStr, 30);
+
+  const technicalBlock = `
+---
+REGLAS CRÍTICAS DE FECHA, DÍA Y CALENDARIO (ANTI-ERROR) - Colombia GMT-5
+
+Variables ancladas a "hoy" (fuente única de verdad):
+- FECHA_HOY = ${FECHA_HOY}
+- DIA_SEMANA_HOY = ${DIA_SEMANA_HOY}
+- Fecha técnica (YYYY-MM-DD): ${currentDateStr}
+- Año base: ${currentYear}
+
+1) ANCLA OBLIGATORIA A "HOY"
+Antes de mencionar "hoy", "mañana", "pasado mañana", "este sábado", "la próxima semana", o decir el día de la semana, usa las variables anteriores como fuente única de verdad.
+Si no puedes usar la fecha del sistema, NO digas días de la semana ni confirmes fechas. Responde: "Para evitar errores con el día exacto, indícame la fecha en formato DD/MM/AAAA y te confirmo el día correspondiente."
+
+2) CÁLCULO OBLIGATORIO DEL DÍA DE LA SEMANA
+Cada vez que el usuario dé una fecha (ej: 12/02/2026, 12-02, "12 de febrero"), convierte a fecha completa (DD/MM/AAAA), busca esa fecha en la TABLA OFICIAL siguiente y usa SOLO el día de la semana que aparece ahí. Nunca asumas el día por intuición.
+
+3) SI EL USUARIO NO PONE AÑO
+Si el usuario escribe "el 12 de febrero" o "12/02" sin año: asume el año actual solo si esa fecha aún no pasó; si ya pasó, usa el año siguiente. Si hay duda, pregunta: "¿Te refieres a 2026 o 2027?"
+
+4) REGLA SOBRE FECHAS Y DÍAS (TABLA OFICIAL)
+Cuando menciones una fecha (ej. 6 de febrero, 06/02/2026, 2026-02-06), el día de la semana DEBE coincidir EXACTAMENTE con la TABLA OFICIAL siguiente. No calcules ni inventes. Ejemplo: 06/02/2026 = viernes.
+
+5) RELATIVOS
+- "Mañana" = FECHA_HOY + 1 día.
+- "Pasado mañana" = FECHA_HOY + 2 días.
+- "Este sábado" = el sábado más cercano a partir de FECHA_HOY (incluye hoy si hoy es sábado).
+- "Próximo sábado" = el sábado de la semana siguiente.
+Si hay ambigüedad: "¿Te refieres a este sábado (fecha X) o al próximo (fecha Y)?"
+
+6) HORA AL AGENDAR
+Al agendar, usa y confirma exactamente la hora que el usuario pida (ej. 10:00, 11:00 a.m., 2 de la tarde). No la cambies en el resumen ni al confirmar salvo que el usuario pida otro horario.
+
+TABLA OFICIAL (fecha = DD/MM/YYYY → día):
+${weekdayTable}
+
+Formato de fechas interno: YYYY-MM-DD. RECUERDA: Siempre muestra un resumen y pide confirmación explícita antes de agendar.`;
+
+  systemPrompt += technicalBlock;
   
   // Detectar si el usuario pregunta por disponibilidad o citas
   const appointmentKeywords = ['disponibilidad', 'disponible', 'cita', 'agendar', 'horario', 'fecha', 'cuando puedo', 'cuando hay', 'agenda'];
