@@ -774,6 +774,28 @@ function formatColombiaDate(date, options = {}) {
   return d.toLocaleDateString('es-CO', { timeZone: COLOMBIA_TIMEZONE, ...options });
 }
 
+// Día de la semana en español para una fecha (Colombia). date = "YYYY-MM-DD" o Date.
+// El bot debe usar ESTA función como referencia para no equivocar el día.
+function getWeekdayForDate(date) {
+  const d = toColombiaDate(date);
+  return d.toLocaleDateString('es-CO', { timeZone: COLOMBIA_TIMEZONE, weekday: 'long' });
+}
+
+// Genera tabla de referencia fecha -> día de la semana para inyectar en el prompt del bot.
+// startDateStr = "YYYY-MM-DD", numDays = cuántos días hacia adelante. Todo en Colombia.
+function getWeekdayTableForBot(startDateStr, numDays = 14) {
+  const start = new Date(startDateStr.trim() + 'T12:00:00-05:00');
+  const lines = [];
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(start.getTime() + i * oneDayMs);
+    const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const weekday = getWeekdayForDate(dateStr);
+    lines.push(`${dateStr} → ${weekday}`);
+  }
+  return lines.join('\n');
+}
+
 // Función para obtener fecha en formato YYYY-MM-DD en Colombia
 function getColombiaDateString(date) {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date.trim())) return date.trim();
@@ -1690,7 +1712,10 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
   const currentDateStr = getColombiaDateString(colombiaDate);
   const currentDateWithWeekday = formatColombiaDate(colombiaDate, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   
-  systemPrompt += `\n\n---\nINFORMACIÓN TÉCNICA PARA CITAS (Colombia GMT-5):\n- Hoy es: ${currentDateWithWeekday}\n- Fecha en formato técnico: ${currentDateStr}\n- Año base: ${currentYear}\n- Huso horario: Colombia (GMT-5). Cuando menciones fechas, usa SIEMPRE el día de la semana correcto según la fecha (ej: 3 de febrero 2026 = martes).\n- Formato de fechas: YYYY-MM-DD (ejemplo: 2026-01-25)\n- RECUERDA: Siempre muestra un resumen y pide confirmación explícita antes de agendar.`;
+  // Tabla de referencia: cada fecha con su día de la semana (Colombia). El bot DEBE usar esta tabla para no equivocarse.
+  const weekdayTable = getWeekdayTableForBot(currentDateStr, 21);
+  
+  systemPrompt += `\n\n---\nINFORMACIÓN TÉCNICA PARA CITAS (Colombia GMT-5):\n- Hoy es: ${currentDateWithWeekday}\n- Fecha en formato técnico: ${currentDateStr}\n- Año base: ${currentYear}\n- Huso horario: Colombia (GMT-5).\n\nTABLA DE REFERENCIA - DÍA DE LA SEMANA POR FECHA (usa SIEMPRE esta tabla al mencionar fechas):\n${weekdayTable}\n\n- Formato de fechas: YYYY-MM-DD (ejemplo: 2026-01-25)\n- RECUERDA: Siempre muestra un resumen y pide confirmación explícita antes de agendar.`;
   
   // Detectar si el usuario pregunta por disponibilidad o citas
   const appointmentKeywords = ['disponibilidad', 'disponible', 'cita', 'agendar', 'horario', 'fecha', 'cuando puedo', 'cuando hay', 'agenda'];
