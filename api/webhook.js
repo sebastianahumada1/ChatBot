@@ -747,7 +747,7 @@ async function ensureDentalinkPatient(phoneNumber, patientData) {
 const COLOMBIA_TIMEZONE = 'America/Bogota';
 const COLOMBIA_OFFSET = -5; // GMT-5
 
-// Función para obtener fecha actual en Colombia
+// Función para obtener fecha actual en Colombia (solo para uso interno con getColombiaDateString)
 function getColombiaDate() {
   const now = new Date();
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -755,16 +755,28 @@ function getColombiaDate() {
   return colombiaTime;
 }
 
-// Función para convertir fecha a Colombia
+// Convierte una fecha a objeto Date interpretado en Colombia.
+// Si date es string "YYYY-MM-DD", se interpreta como ese día a mediodía en Colombia
+// para que el día de la semana y formato salgan correctos (evita medianoche UTC = día anterior en Colombia).
 function toColombiaDate(date) {
   if (!date) return getColombiaDate();
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
+    return new Date(date.trim() + 'T12:00:00-05:00');
+  }
   const d = new Date(date);
   const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
   return new Date(utc + (COLOMBIA_OFFSET * 3600000));
 }
 
+// Formatear fecha en Colombia (día de la semana, día, mes, año) - siempre usa timezone Colombia
+function formatColombiaDate(date, options = {}) {
+  const d = date instanceof Date ? date : toColombiaDate(date);
+  return d.toLocaleDateString('es-CO', { timeZone: COLOMBIA_TIMEZONE, ...options });
+}
+
 // Función para obtener fecha en formato YYYY-MM-DD en Colombia
 function getColombiaDateString(date) {
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date.trim())) return date.trim();
   const colDate = toColombiaDate(date);
   const year = colDate.getFullYear();
   const month = String(colDate.getMonth() + 1).padStart(2, '0');
@@ -1672,12 +1684,13 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
     systemPrompt += '\n\nINSTRUCCIONES DE CONTEXTO:\n- Revisa el historial de la conversación para recordar información previa.\n- Si el usuario menciona algo que ya hablaron antes, haz referencia a ello de manera natural.\n- Mantén la coherencia con mensajes anteriores.\n- Si el usuario pregunta algo que ya respondiste, puedes hacer referencia a la respuesta anterior de forma breve.';
   }
   
-  // Agregar información técnica para gestión de citas
+  // Agregar información técnica para gestión de citas (fecha y día de la semana en Colombia)
   const currentYear = 2026; // Año base para agendamiento
   const colombiaDate = getColombiaDate();
   const currentDateStr = getColombiaDateString(colombiaDate);
+  const currentDateWithWeekday = formatColombiaDate(colombiaDate, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   
-  systemPrompt += `\n\n---\nINFORMACIÓN TÉCNICA PARA CITAS:\n- Fecha actual (Colombia): ${currentDateStr}\n- Año base: ${currentYear}\n- Huso horario: Colombia (GMT-5)\n- Formato de fechas: YYYY-MM-DD (ejemplo: 2026-01-25)\n- RECUERDA: Siempre muestra un resumen y pide confirmación explícita antes de agendar.`;
+  systemPrompt += `\n\n---\nINFORMACIÓN TÉCNICA PARA CITAS (Colombia GMT-5):\n- Hoy es: ${currentDateWithWeekday}\n- Fecha en formato técnico: ${currentDateStr}\n- Año base: ${currentYear}\n- Huso horario: Colombia (GMT-5). Cuando menciones fechas, usa SIEMPRE el día de la semana correcto según la fecha (ej: 3 de febrero 2026 = martes).\n- Formato de fechas: YYYY-MM-DD (ejemplo: 2026-01-25)\n- RECUERDA: Siempre muestra un resumen y pide confirmación explícita antes de agendar.`;
   
   // Detectar si el usuario pregunta por disponibilidad o citas
   const appointmentKeywords = ['disponibilidad', 'disponible', 'cita', 'agendar', 'horario', 'fecha', 'cuando puedo', 'cuando hay', 'agenda'];
@@ -1703,11 +1716,10 @@ async function getAIResponse(userMessage, phoneNumber, userMessageId = null) {
         slotsByDate[dateKey][slot.location].push(slot.time);
       });
       
-      // Formatear información de disponibilidad
+      // Formatear información de disponibilidad (fechas en Colombia, día de la semana correcto)
       const availabilityLines = ['\n\nDISPONIBILIDAD DE CITAS (próximos 7 días):'];
       Object.keys(slotsByDate).sort().forEach(date => {
-        const dateObj = toColombiaDate(date);
-        const dateStr = dateObj.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const dateStr = formatColombiaDate(date, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         availabilityLines.push(`\n${dateStr}:`);
         
         if (slotsByDate[date].rodadero.length > 0) {
