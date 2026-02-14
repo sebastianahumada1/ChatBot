@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #111827;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+/* Add padding to the bottom of the main content on mobile to account for the fixed bar */
+@media (max-width: 768px) {
+  main {
+    padding-bottom: 4rem; /* 64px (h-16) */
+  }
+}
+
+/* Smooth scrolling for anchor links */
+html {
+  scroll-behavior: smooth;
+}
