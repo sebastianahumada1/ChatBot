@@ -1,4 +1,4 @@
-import Link from "next/navigation";
+import Link from "next/link";
 import { CLINIC_NAME } from "@/lib/constants";
 
 const services = [

@@ -24,8 +24,9 @@ const servicesData: Record<string, any> = {
   }
 };
 
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const service = servicesData[params.slug];
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const service = servicesData[slug];
   if (!service) return { title: "Servicio no encontrado" };
   return {
     title: service.title,
@@ -33,8 +34,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   };
 }
 
-export default function ServicioDetallePage({ params }: { params: { slug: string } }) {
-  const service = servicesData[params.slug];
+export default async function ServicioDetallePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const service = servicesData[slug];
   if (!service) notFound();
 
   return (
@@ -76,7 +78,6 @@ export default function ServicioDetallePage({ params }: { params: { slug: string
         </div>
       </div>
       
-      {/* JSON-LD for FAQPage */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
